@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Location Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+<div id="toast-container"></div>
+<div id="map"></div>
+<button id="sidebar-toggle" onclick="toggleSidebar()">&rsaquo;</button>
+<div id="sidebar" onclick="if(window.innerWidth<=640&&event.target===this)toggleSidebar()">
+    <h1>Location Tracker</h1>
+    <div class="subtitle">REAL-TIME TRACKING DASHBOARD</div>
+
+    <div id="latest-location-banner" class="latest-banner" style="display:none;">
+        <div class="label">Current Location</div>
+        <div class="address" id="latest-address"></div>
+        <div class="time" id="latest-time"></div>
+        <div class="batt" id="latest-batt"></div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Map</div>
+        <div class="map-switcher">
+            <div class="map-pill gm-road active" data-layer="roadmap" onclick="switchMapLayer('roadmap')"><span>Road</span></div>
+            <div class="map-pill gm-sat" data-layer="satellite" onclick="switchMapLayer('satellite')"><span>Satellite</span></div>
+            <div class="map-pill gm-hyb" data-layer="hybrid" onclick="switchMapLayer('hybrid')"><span>Hybrid</span></div>
+            <div class="map-pill gm-ter" data-layer="terrain" onclick="switchMapLayer('terrain')"><span>Terrain</span></div>
+            <div class="map-pill gm-dark" data-layer="dark" onclick="switchMapLayer('dark')"><span>Dark</span></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="view-toggle">
+            <button class="active" data-view="path" onclick="setViewMode('path')">Path</button>
+            <button data-view="heatmap" onclick="setViewMode('heatmap')">Heatmap</button>
+            <button data-view="points" onclick="setViewMode('points')">Points</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Time Range</div>
+        <select class="filter-input" id="time-filter" onchange="refreshMap()">
+            <option value="0">All Time</option>
+            <option value="1">Last 24 Hours</option>
+            <option value="3">Last 3 Days</option>
+            <option value="7" selected>Last 7 Days</option>
+            <option value="30">Last 30 Days</option>
+            <option value="90">Last 90 Days</option>
+        </select>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Timeline</div>
+        <div class="timeline-container">
+            <input type="range" class="timeline-slider" id="timeline-slider" min="0" max="100" value="100" oninput="onTimelineChange(this.value)">
+            <div class="timeline-labels"><span id="timeline-start">-</span><span id="timeline-end">Now</span></div>
+            <div class="timeline-current" id="timeline-current">Latest</div>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+        <div class="section-title">People</div>
+        <div id="people-list"></div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Statistics</div>
+        <div id="stats-panel"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+        <div class="section-title">Self Tracking</div>
+        <div class="controls">
+            <button class="btn" id="self-track-btn" onclick="toggleSelfTracking()">Enable My Location</button>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.4;">Shares your browser location with this dashboard so you appear on the map. Data stays on this device.</div>
+        <div class="status-pill" id="self-track-status">Not tracking your location</div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Polling</div>
+        <div class="status-pill" id="poll-status">Interval: <span class="highlight">loading...</span></div>
+    </div>
+
+    <div class="section">
+        <div class="controls">
+            <button class="btn" onclick="refreshMap()">Refresh</button>
+            <button class="btn" onclick="fitBounds()">Fit All</button>
+            <select class="btn" id="export-format" style="padding:6px 8px;">
+                <option value="json">JSON</option>
+                <option value="csv">CSV</option>
+                <option value="geojson">GeoJSON</option>
+            </select>
+            <button class="btn" onclick="exportData()">Export</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
