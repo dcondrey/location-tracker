@@ -1,0 +1,174 @@
+.TH LOCATION-TRACKER 1 "June 2026" "location-tracker 1.0.0" "User Commands"
+.SH NAME
+location-tracker \- self-hosted location tracking dashboard
+.SH SYNOPSIS
+.B location-tracker
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B location-tracker
+polls Google Maps location sharing and visualizes movement history on an
+interactive web dashboard. It runs as a background daemon with adaptive
+polling intervals, encrypted cookie storage, and SQLite-backed history.
+.SH COMMANDS
+.SS Tracking
+.TP
+.B on
+Start the tracker daemon and web dashboard. Automatically configures DNS
+(http://tracker.local) and port forwarding on first run.
+.TP
+.B off
+Stop the tracker daemon.
+.TP
+.B status
+Check if the tracker is running and print the dashboard URL.
+.SS Authentication
+.TP
+.B cookies
+Open a Chromium browser to Google sign-in. Cookies are detected automatically
+when login completes (supports MFA, 15-minute timeout). Cookies are encrypted
+at rest using Fernet with the key stored in macOS Keychain.
+.TP
+.B test
+Verify stored cookies are valid by querying the Google API. Lists all shared
+contacts if successful.
+.SS Configuration
+.TP
+.B config \-\-email \fIaddress\fR
+Set the Google account email used for location sharing.
+.TP
+.B config
+Show current configuration.
+.TP
+.B setup
+First-time setup: installs Chromium browser, configures the
+.I tracker.local
+hostname in /etc/hosts, and sets up port forwarding from port 80 to 7070.
+.SS Service Management
+.TP
+.B install
+Install a launchd plist so the tracker starts automatically on login and
+restarts on failure.
+.TP
+.B uninstall
+Remove the launchd service.
+.TP
+.B dns
+Manually set up the
+.I tracker.local
+hostname and port forwarding.
+.TP
+.B dns-remove
+Remove the hostname from /etc/hosts and remove port forwarding rules.
+.SS Querying Data
+.TP
+.B where \fIperson\fR
+Show the latest known location for a person. Supports partial name matching.
+.TP
+.B history \fIperson\fR [\-\-days \fIN\fR]
+Show recent location history for a person (default: last 1 day, shows last
+20 entries). Supports partial name matching.
+.TP
+.B stats
+Print tracking statistics: total distance, number of stops, dwell time,
+and date range for each tracked person.
+.TP
+.B map [\-\-days \fIN\fR] [\-\-output \fIfile\fR]
+Generate a static HTML map from collected location data. Defaults to all
+time, output to location_map.html.
+.TP
+.B purge \fIdays\fR
+Delete location records older than
+.I days
+days from the database and vacuum to reclaim space.
+.SH ADAPTIVE POLLING
+Polling frequency adjusts based on detected movement speed:
+.TP
+.B Highway (>60 km/h)
+Every 15 seconds
+.TP
+.B Driving (10\-60 km/h)
+Every 30 seconds
+.TP
+.B Walking (1\-10 km/h)
+Every 60 seconds
+.TP
+.B Stationary (<1 km/h)
+Every 10 minutes
+.SH COOKIE LIFECYCLE
+Cookies are captured via browser automation, encrypted with Fernet, and stored
+as
+.I cookies.enc
+in the project directory. The encryption key lives in macOS Keychain under
+the account "location-tracker". When cookies expire, the tracker attempts an
+automatic headless refresh. If that fails, run
+.B location-tracker cookies
+to re-authenticate.
+.SH DASHBOARD
+When running, the web dashboard at http://tracker.local provides:
+.IP \(bu 2
+Map layers: Road, Satellite, Hybrid, Terrain, Dark
+.IP \(bu 2
+Views: Path, Heatmap, Points
+.IP \(bu 2
+Time filtering and timeline scrubber with date labels
+.IP \(bu 2
+Per-person speed badges and stop detection
+.IP \(bu 2
+Self-tracking via browser geolocation
+.IP \(bu 2
+Export as JSON, CSV, or GeoJSON
+.SH FILES
+.TP
+.I ~/.config/location-tracker/config.json
+User configuration (email).
+.TP
+.I cookies.enc
+Encrypted Google authentication cookies.
+.TP
+.I location_history.db
+SQLite database with all location records.
+.TP
+.I browser_profile/
+Persistent Chromium browser profile for cookie refresh.
+.TP
+.I .tracker.log
+Daemon log file (rotated at 10MB).
+.TP
+.I .tracker.pid
+PID file for the running daemon.
+.SH ENVIRONMENT
+.TP
+.B LOCATION_TRACKER_EMAIL
+Override the configured Google account email.
+.SH SECURITY
+Auth cookies are encrypted at rest. The Flask server binds to 127.0.0.1 only.
+All user-controlled data is HTML-escaped. Coordinate inputs are validated.
+SQLite uses WAL mode for concurrent safety. Plaintext cookies.txt files are
+automatically migrated and deleted.
+.SH EXAMPLES
+.nf
+# Initial setup
+location-tracker config --email alice@gmail.com
+location-tracker setup
+location-tracker cookies
+
+# Daily use
+location-tracker on
+location-tracker where Alice
+location-tracker history Alice --days 3
+
+# Maintenance
+location-tracker purge 90
+location-tracker install
+.fi
+.SH AUTHOR
+David Condrey <davidcondrey@me.com>
+.SH BUGS
+Report bugs at https://github.com/dcondrey/location-tracker/issues
+.SH LICENSE
+MIT License
+.SH SEE ALSO
+.BR launchctl (1),
+.BR pfctl (8),
+.BR security (1)

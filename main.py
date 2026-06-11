@@ -94,6 +94,10 @@ def _start():
 
     migrate_plaintext_to_encrypted()
 
+    if not _dns_is_configured():
+        _dns_add()
+        _pf_add()
+
     log_path = Path(".tracker.log")
     if log_path.exists() and log_path.stat().st_size > 10 * 1024 * 1024:
         log_path.rename(".tracker.log.old")
@@ -177,16 +181,20 @@ def _setup():
     log.info("  Dashboard: %s", CUSTOM_URL)
 
 
-def _dns_add():
-    """Add 'tracker' hostname to /etc/hosts."""
-    hosts_entry = f"127.0.0.1\t{HOSTNAME}"
+def _dns_is_configured():
+    """Check if the hostname is already in /etc/hosts."""
     try:
-        hosts = Path("/etc/hosts").read_text()
-        if HOSTNAME in hosts.split():
-            log.info("  Hostname '%s' already in /etc/hosts.", HOSTNAME)
-            return
+        return HOSTNAME in Path("/etc/hosts").read_text().split()
     except PermissionError:
-        pass
+        return False
+
+
+def _dns_add():
+    """Add hostname to /etc/hosts."""
+    hosts_entry = f"127.0.0.1\t{HOSTNAME}"
+    if _dns_is_configured():
+        log.info("  Hostname '%s' already in /etc/hosts.", HOSTNAME)
+        return
 
     log.info("  Adding '%s' to /etc/hosts (requires sudo)...", hosts_entry)
     result = subprocess.run(
@@ -387,11 +395,11 @@ def cli():
     config_parser = subparsers.add_parser("config", help="Configure settings")
     config_parser.add_argument("--email", help="Google account email for location sharing")
 
-    install_parser = subparsers.add_parser("install", help="Install as persistent service (survives reboot)")
-    install_parser.add_argument("--remove", action="store_true", help="Remove the persistent service")
+    subparsers.add_parser("install", help="Install as persistent service (survives reboot)")
+    subparsers.add_parser("uninstall", help="Remove the persistent service")
 
-    dns_parser = subparsers.add_parser("dns", help="Manage custom hostname")
-    dns_parser.add_argument("--remove", action="store_true", help="Remove hostname and port forwarding")
+    subparsers.add_parser("dns", help="Set up custom hostname (http://tracker.local)")
+    subparsers.add_parser("dns-remove", help="Remove custom hostname and port forwarding")
 
     map_parser = subparsers.add_parser("map", help="Generate a static map file")
     map_parser.add_argument("--days", type=int, default=None)
@@ -442,17 +450,15 @@ def cli():
             for k, v in config.items():
                 log.info("  %s: %s", k, v or "(not set)")
     elif args.command == "install":
-        if args.remove:
-            _uninstall_launchd()
-        else:
-            _install_launchd()
+        _install_launchd()
+    elif args.command == "uninstall":
+        _uninstall_launchd()
     elif args.command == "dns":
-        if args.remove:
-            _dns_remove()
-            _pf_remove()
-        else:
-            _dns_add()
-            _pf_add()
+        _dns_add()
+        _pf_add()
+    elif args.command == "dns-remove":
+        _dns_remove()
+        _pf_remove()
     elif args.command == "map":
         from tracker import LocationTracker
 
