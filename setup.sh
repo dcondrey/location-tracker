@@ -53,7 +53,7 @@ main() {
     info "All done! Next steps:"
     echo "  1. Authenticate:  uv run location-tracker cookies"
     echo "  2. Start tracker: uv run location-tracker on"
-    echo "  3. Open:          http://tracker"
+    echo "  3. Open:          http://tracker.local"
 }
 
 main "$@"

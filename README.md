@@ -37,7 +37,7 @@ uv run location-tracker cookies
 uv run location-tracker on
 ```
 
-The dashboard will be available at **http://tracker** (or `http://localhost:7070` if DNS isn't configured).
+The dashboard will be available at **http://tracker.local** (or `http://localhost:7070` if DNS isn't configured).
 
 ## Prerequisites
 
@@ -65,7 +65,7 @@ The dashboard will be available at **http://tracker** (or `http://localhost:7070
 | `config --email you@gmail.com` | Set the Google account email |
 | `config` | Show current configuration |
 | `setup` | First-time setup: install Chromium, configure DNS and port forwarding |
-| `dns` | Set up `http://tracker` hostname |
+| `dns` | Set up `http://tracker.local` hostname |
 | `dns --remove` | Remove hostname and port forwarding |
 | `install` | Install as a launchd service (auto-start on login) |
 | `install --remove` | Remove the launchd service |

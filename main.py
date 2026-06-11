@@ -20,8 +20,8 @@ DATA_FILE = "location_history.db"
 COOKIES_FILE = "cookies.enc"
 PORT = 7070
 POLL_INTERVAL = 300
-HOSTNAME = "tracker"
-CUSTOM_URL = "http://tracker"
+HOSTNAME = "tracker.local"
+CUSTOM_URL = "http://tracker.local"
 PF_ANCHOR = "com.locationtracker"
 PF_ANCHOR_FILE = f"/etc/pf.anchors/{PF_ANCHOR}"
 
