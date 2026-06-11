@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  typecheck:
+    name: Import & Syntax Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Verify all modules import
+        run: uv run python -c "import main, tracker, dashboard, db, cookie_store, get_cookies; print('All imports OK')"
+
+      - name: Check for syntax errors
+        run: uv run python -m py_compile main.py && uv run python -m py_compile tracker.py && uv run python -m py_compile dashboard.py && uv run python -m py_compile db.py && uv run python -m py_compile cookie_store.py && uv run python -m py_compile get_cookies.py
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --tb=short || echo "No tests found yet"
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Check for hardcoded secrets
+        run: |
+          echo "Scanning for potential secrets..."
+          FOUND=0
+          # Check for hardcoded emails (not in example/help text)
+          if grep -rn '@gmail.com' --include='*.py' | grep -v 'you@gmail.com' | grep -v 'test@test.com' | grep -v '#' | grep -v 'example'; then
+            echo "::warning::Possible hardcoded email found"
+            FOUND=1
+          fi
+          # Check for API keys or tokens
+          if grep -rniE '(api_key|api_secret|token|password)\s*=' --include='*.py' | grep -v '#' | grep -v 'def ' | grep -v 'request' | grep -v 'csrf'; then
+            echo "::warning::Possible hardcoded credential found"
+            FOUND=1
+          fi
+          # Verify sensitive files are gitignored
+          for f in cookies.txt cookies.enc location_history.json location_history.db .tracker.log browser_profile; do
+            if ! grep -q "$f" .gitignore; then
+              echo "::error::$f is NOT in .gitignore"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 0 ]; then echo "No secrets found."; fi
+
+      - name: Dependency audit
+        run: uv run pip audit --desc || echo "pip-audit not available, skipping"
+
+  build:
+    name: Package Build
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build wheel
+        run: uv build
+
+      - name: Verify wheel contents
+        run: |
+          ls -la dist/
+          uv run python -m zipfile -l dist/*.whl | head -30

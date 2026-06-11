@@ -1,7 +1,7 @@
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -106,8 +106,8 @@ class LocationDB:
         return dict(row) if row else None
 
     def purge_older_than(self, days):
-        from datetime import timedelta, timezone
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        from datetime import timedelta
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         result = self.conn.execute(
             "DELETE FROM locations WHERE timestamp < ?", (cutoff,)
         )

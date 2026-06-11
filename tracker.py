@@ -1,16 +1,15 @@
-import json
 import logging
 import math
 import os
-import tempfile
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from locationsharinglib import InvalidCookies, InvalidData, Service
-from db import LocationDB
+
 import folium
-from folium.plugins import TimestampedGeoJson
 import pandas as pd
+from locationsharinglib import InvalidCookies, InvalidData, Service
+
+from db import LocationDB
 
 log = logging.getLogger(__name__)
 
@@ -52,8 +51,9 @@ class LocationTracker:
         """Attempt headless cookie refresh using persistent browser profile."""
         try:
             from playwright.sync_api import sync_playwright
-            from get_cookies import STEALTH_SCRIPTS, _has_auth_cookies, _write_cookies_file
+
             from cookie_store import encrypt_cookies
+            from get_cookies import STEALTH_SCRIPTS, _has_auth_cookies, _write_cookies_file
 
             with sync_playwright() as p:
                 context = p.chromium.launch_persistent_context(
@@ -100,7 +100,7 @@ class LocationTracker:
 
             for person in service.get_all_people():
                 person_id = person.full_name or person.email or "Unknown"
-                ts = datetime.now(timezone.utc).isoformat()
+                ts = datetime.now(UTC).isoformat()
                 battery = getattr(person, 'battery_level', None)
                 charging = getattr(person, 'charging', None)
                 address = getattr(person, 'address', None) or 'Unknown Address'
@@ -244,7 +244,7 @@ class LocationTracker:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
         if days:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff = datetime.now(UTC) - timedelta(days=days)
             df = df[df['timestamp'] >= cutoff]
             if df.empty:
                 log.warning("No data in the last %d days.", days)

@@ -2,7 +2,6 @@ import logging
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
@@ -16,10 +15,7 @@ AUTH_COOKIE_SETS = [
     {"__Secure-3PSID", "__Secure-3PSIDTS"},
 ]
 
-LOGIN_URL = (
-    "https://accounts.google.com/ServiceLogin"
-    "?continue=https%3A%2F%2Fwww.google.com%2Fmaps"
-)
+LOGIN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fwww.google.com%2Fmaps"
 
 TIMEOUT_SECONDS = 900  # 15 minutes
 
@@ -62,30 +58,22 @@ def _ensure_playwright_browser():
     """Install Playwright Chromium if not already present."""
     try:
         from playwright._impl._driver import compute_driver_executable
+
         driver = compute_driver_executable()
-        result = subprocess.run(
-            [str(driver), "install", "--dry-run", "chromium"],
-            capture_output=True, text=True
-        )
+        result = subprocess.run([str(driver), "install", "--dry-run", "chromium"], capture_output=True, text=True)
         if result.returncode == 0 and "chromium" not in result.stdout.lower():
             return
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
     log.info("Installing Chromium browser (first run only)...")
-    subprocess.run(
-        [sys.executable, "-m", "playwright", "install", "chromium"],
-        check=True
-    )
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
     log.info("Chromium installed.")
 
 
 def _has_auth_cookies(cookies):
     """Check if any known auth cookie pattern is present."""
-    google_cookie_names = {
-        c["name"] for c in cookies
-        if "google" in c.get("domain", "")
-    }
+    google_cookie_names = {c["name"] for c in cookies if "google" in c.get("domain", "")}
     for cookie_set in AUTH_COOKIE_SETS:
         if cookie_set.issubset(google_cookie_names):
             return True
@@ -115,7 +103,8 @@ def _validate_cookies(cookies_file="cookies.txt"):
     """Verify extracted cookies work with the location sharing API."""
     try:
         from locationsharinglib import Service
-        service = Service(cookies_file=cookies_file, authenticating_account="test@test.com")
+
+        Service(cookies_file=cookies_file, authenticating_account="test@test.com")
         return True
     except Exception:
         return False
@@ -172,7 +161,7 @@ def generate_cookies_txt():
             elif "myaccount.google.com" in url or "google.com/maps" in url:
                 status = "  Login detected, capturing cookies..."
             else:
-                status = "  Waiting... (%ds)" % elapsed
+                status = f"  Waiting... ({elapsed}s)"
 
             if status != last_status:
                 log.info(status)
@@ -203,6 +192,7 @@ def generate_cookies_txt():
         valid = _validate_cookies()
 
         from cookie_store import encrypt_cookies
+
         encrypt_cookies("cookies.txt")
 
         if valid:

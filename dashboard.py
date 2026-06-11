@@ -4,10 +4,11 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request
+
 from tracker import LocationTracker
 
 log = logging.getLogger(__name__)
@@ -146,7 +147,7 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
         from datetime import timedelta
         since = None
         if days_int:
-            since = (datetime.now(timezone.utc) - timedelta(days=days_int)).isoformat()
+            since = (datetime.now(UTC) - timedelta(days=days_int)).isoformat()
         data = tracker.db.get_history_dict(since=since)
         # Attach speed_info per person so the frontend doesn't need to recompute
         speed_info = {}
@@ -175,7 +176,7 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
 
         tracker.db.add_location(
             person=self_name,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             latitude=lat,
             longitude=lon,
             accuracy=data.get('accuracy'),

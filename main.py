@@ -6,7 +6,7 @@ import os
 import signal
 import subprocess
 import sys
-import time
+from datetime import UTC
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -469,15 +469,16 @@ def cli():
                 log.info("%s: no data", person)
         db.close()
     elif args.command == "history":
+        from datetime import datetime, timedelta
+
         from db import LocationDB
-        from datetime import datetime, timedelta, timezone
         db = LocationDB(DATA_FILE)
         people = db.get_people()
         match = [p for p in people if args.person.lower() in p.lower()]
         if not match:
             log.error("No person matching '%s'. Known: %s", args.person, ", ".join(people))
         for person in match:
-            since = (datetime.now(timezone.utc) - timedelta(days=args.days)).isoformat()
+            since = (datetime.now(UTC) - timedelta(days=args.days)).isoformat()
             locs = db.get_locations(person=person, since=since)
             log.info("--- %s (%d points, last %d day(s)) ---", person, len(locs), args.days)
             for loc in locs[-20:]:
