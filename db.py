@@ -42,31 +42,32 @@ class LocationDB:
 
     def _init_schema(self):
         self.conn.executescript(SCHEMA)
-        row = self.conn.execute(
-            "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone()
+        row = self.conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         if row is None:
-            self.conn.execute(
-                "INSERT INTO meta (key, value) VALUES ('schema_version', ?)",
-                (str(SCHEMA_VERSION),)
-            )
+            self.conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
             self.conn.commit()
 
-    def add_location(self, person, timestamp, latitude, longitude,
-                     accuracy=None, battery=None, charging=None, address=None):
+    def add_location(
+        self, person, timestamp, latitude, longitude, accuracy=None, battery=None, charging=None, address=None
+    ):
         self.conn.execute(
             "INSERT INTO locations (person, timestamp, latitude, longitude, "
             "accuracy, battery, charging, address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (person, timestamp, latitude, longitude,
-             accuracy, battery, 1 if charging else 0 if charging is not None else None,
-             address)
+            (
+                person,
+                timestamp,
+                latitude,
+                longitude,
+                accuracy,
+                battery,
+                1 if charging else 0 if charging is not None else None,
+                address,
+            ),
         )
         self.conn.commit()
 
     def get_people(self):
-        rows = self.conn.execute(
-            "SELECT DISTINCT person FROM locations ORDER BY person"
-        ).fetchall()
+        rows = self.conn.execute("SELECT DISTINCT person FROM locations ORDER BY person").fetchall()
         return [r["person"] for r in rows]
 
     def get_locations(self, person=None, since=None):
@@ -100,17 +101,15 @@ class LocationDB:
 
     def get_latest(self, person):
         row = self.conn.execute(
-            "SELECT * FROM locations WHERE person = ? ORDER BY timestamp DESC LIMIT 1",
-            (person,)
+            "SELECT * FROM locations WHERE person = ? ORDER BY timestamp DESC LIMIT 1", (person,)
         ).fetchone()
         return dict(row) if row else None
 
     def purge_older_than(self, days):
         from datetime import timedelta
+
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-        result = self.conn.execute(
-            "DELETE FROM locations WHERE timestamp < ?", (cutoff,)
-        )
+        result = self.conn.execute("DELETE FROM locations WHERE timestamp < ?", (cutoff,))
         self.conn.commit()
         count = result.rowcount
         if count > 0:
@@ -133,10 +132,16 @@ class LocationDB:
                 self.conn.execute(
                     "INSERT INTO locations (person, timestamp, latitude, longitude, "
                     "accuracy, battery, charging, address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (person, loc["timestamp"], loc["latitude"], loc["longitude"],
-                     loc.get("accuracy"), loc.get("battery"),
-                     1 if loc.get("charging") else 0 if loc.get("charging") is not None else None,
-                     loc.get("address"))
+                    (
+                        person,
+                        loc["timestamp"],
+                        loc["latitude"],
+                        loc["longitude"],
+                        loc.get("accuracy"),
+                        loc.get("battery"),
+                        1 if loc.get("charging") else 0 if loc.get("charging") is not None else None,
+                        loc.get("address"),
+                    ),
                 )
                 count += 1
         self.conn.commit()

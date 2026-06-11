@@ -16,9 +16,9 @@ ENCRYPTED_FILE = "cookies.enc"
 def _keychain_get():
     """Retrieve the encryption key from macOS Keychain."""
     result = subprocess.run(
-        ["security", "find-generic-password",
-         "-a", KEYCHAIN_ACCOUNT, "-s", KEYCHAIN_SERVICE, "-w"],
-        capture_output=True, text=True,
+        ["security", "find-generic-password", "-a", KEYCHAIN_ACCOUNT, "-s", KEYCHAIN_SERVICE, "-w"],
+        capture_output=True,
+        text=True,
     )
     if result.returncode == 0:
         return result.stdout.strip().encode()
@@ -28,9 +28,7 @@ def _keychain_get():
 def _keychain_set(key):
     """Store the encryption key in macOS Keychain."""
     subprocess.run(
-        ["security", "add-generic-password",
-         "-a", KEYCHAIN_ACCOUNT, "-s", KEYCHAIN_SERVICE,
-         "-w", key.decode(), "-U"],
+        ["security", "add-generic-password", "-a", KEYCHAIN_ACCOUNT, "-s", KEYCHAIN_SERVICE, "-w", key.decode(), "-U"],
         capture_output=True,
     )
 

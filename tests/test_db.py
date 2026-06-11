@@ -90,8 +90,15 @@ def test_charging_stored_as_bool(db):
 def test_import_from_json(db, tmp_path):
     json_data = {
         "Alice": [
-            {"timestamp": "2026-06-01T12:00:00", "latitude": 32.7, "longitude": -117.1,
-             "battery": 80, "charging": True, "address": "Home", "accuracy": 10}
+            {
+                "timestamp": "2026-06-01T12:00:00",
+                "latitude": 32.7,
+                "longitude": -117.1,
+                "battery": 80,
+                "charging": True,
+                "address": "Home",
+                "accuracy": 10,
+            }
         ]
     }
     json_path = tmp_path / "history.json"

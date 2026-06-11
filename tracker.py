@@ -13,12 +13,12 @@ from db import LocationDB
 
 log = logging.getLogger(__name__)
 
-COLORS = ['#4361ee', '#e63946', '#2a9d8f', '#e9c46a', '#7209b7', '#f77f00', '#06d6a0', '#ef476f']
+COLORS = ["#4361ee", "#e63946", "#2a9d8f", "#e9c46a", "#7209b7", "#f77f00", "#06d6a0", "#ef476f"]
 STOP_DISTANCE_METERS = 25
 
 
 class LocationTracker:
-    def __init__(self, cookies_file, email, data_file='location_history.db'):
+    def __init__(self, cookies_file, email, data_file="location_history.db"):
         self.cookies_file = cookies_file
         self.email = email
         self.db = LocationDB(data_file)
@@ -27,7 +27,7 @@ class LocationTracker:
         self._stats_cache_points = 0
 
         # Auto-migrate from JSON if DB is empty and JSON exists
-        json_path = Path(data_file).with_suffix('.json')
+        json_path = Path(data_file).with_suffix(".json")
         if self.db.get_total_points() == 0 and json_path.exists():
             log.info("Migrating data from %s to SQLite...", json_path)
             self.db.import_from_json(json_path)
@@ -80,37 +80,32 @@ class LocationTracker:
     def poll_location(self):
         try:
             from cookie_store import decrypt_to_tempfile, has_encrypted_cookies
+
             if has_encrypted_cookies(self.cookies_file):
                 tmp_path = decrypt_to_tempfile(self.cookies_file)
                 if not tmp_path:
                     log.error("Cannot decrypt cookies. Re-run: location-tracker cookies")
                     return False
                 try:
-                    service = Service(
-                        cookies_file=tmp_path,
-                        authenticating_account=self.email
-                    )
+                    service = Service(cookies_file=tmp_path, authenticating_account=self.email)
                 finally:
                     os.unlink(tmp_path)
             else:
-                service = Service(
-                    cookies_file=self.cookies_file,
-                    authenticating_account=self.email
-                )
+                service = Service(cookies_file=self.cookies_file, authenticating_account=self.email)
 
             for person in service.get_all_people():
                 person_id = person.full_name or person.email or "Unknown"
                 ts = datetime.now(UTC).isoformat()
-                battery = getattr(person, 'battery_level', None)
-                charging = getattr(person, 'charging', None)
-                address = getattr(person, 'address', None) or 'Unknown Address'
+                battery = getattr(person, "battery_level", None)
+                charging = getattr(person, "charging", None)
+                address = getattr(person, "address", None) or "Unknown Address"
 
                 self.db.add_location(
                     person=person_id,
                     timestamp=ts,
                     latitude=person.latitude,
                     longitude=person.longitude,
-                    accuracy=getattr(person, 'accuracy', None),
+                    accuracy=getattr(person, "accuracy", None),
                     battery=battery,
                     charging=charging,
                     address=address,
@@ -118,8 +113,7 @@ class LocationTracker:
 
                 batt_str = f"{battery}%" if battery is not None else "N/A"
                 log.info(
-                    "Ping: %s | Batt: %s | Coords: (%.4f, %.4f)",
-                    person_id, batt_str, person.latitude, person.longitude
+                    "Ping: %s | Batt: %s | Coords: (%.4f, %.4f)", person_id, batt_str, person.latitude, person.longitude
                 )
 
             return True
@@ -147,9 +141,11 @@ class LocationTracker:
     def get_stats(self):
         total_points = self.db.get_total_points()
         now = time.time()
-        if (self._stats_cache is not None
-                and now - self._stats_cache_time < 30
-                and total_points == self._stats_cache_points):
+        if (
+            self._stats_cache is not None
+            and now - self._stats_cache_time < 30
+            and total_points == self._stats_cache_points
+        ):
             return self._stats_cache
 
         stats = {}
@@ -157,25 +153,27 @@ class LocationTracker:
             if not locations:
                 continue
             df = pd.DataFrame(locations)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df["timestamp"] = pd.to_datetime(df["timestamp"])
 
             total_distance = 0.0
             for i in range(1, len(df)):
                 total_distance += self.haversine(
-                    df.iloc[i - 1]['longitude'], df.iloc[i - 1]['latitude'],
-                    df.iloc[i]['longitude'], df.iloc[i]['latitude']
+                    df.iloc[i - 1]["longitude"],
+                    df.iloc[i - 1]["latitude"],
+                    df.iloc[i]["longitude"],
+                    df.iloc[i]["latitude"],
                 )
 
             stops = self._compute_stops(df)
-            total_dwell = sum((s['end_time'] - s['start_time']).total_seconds() for s in stops)
+            total_dwell = sum((s["end_time"] - s["start_time"]).total_seconds() for s in stops)
 
             stats[person] = {
-                'total_points': len(df),
-                'total_distance_km': round(total_distance / 1000, 2),
-                'total_stops': len(stops),
-                'total_dwell_hours': round(total_dwell / 3600, 1),
-                'first_seen': df['timestamp'].min().isoformat(),
-                'last_seen': df['timestamp'].max().isoformat(),
+                "total_points": len(df),
+                "total_distance_km": round(total_distance / 1000, 2),
+                "total_stops": len(stops),
+                "total_dwell_hours": round(total_dwell / 3600, 1),
+                "first_seen": df["timestamp"].min().isoformat(),
+                "last_seen": df["timestamp"].max().isoformat(),
             }
         self._stats_cache = stats
         self._stats_cache_time = time.time()
@@ -189,51 +187,63 @@ class LocationTracker:
             return
         for person, s in stats.items():
             log.info("--- %s ---", person)
-            log.info("  Points: %d | Distance: %.1f km | Stops: %d",
-                     s['total_points'], s['total_distance_km'], s['total_stops'])
-            log.info("  Dwell time: %.1f hours", s['total_dwell_hours'])
-            log.info("  Tracked: %s to %s", s['first_seen'][:10], s['last_seen'][:10])
+            log.info(
+                "  Points: %d | Distance: %.1f km | Stops: %d",
+                s["total_points"],
+                s["total_distance_km"],
+                s["total_stops"],
+            )
+            log.info("  Dwell time: %.1f hours", s["total_dwell_hours"])
+            log.info("  Tracked: %s to %s", s["first_seen"][:10], s["last_seen"][:10])
 
     def _compute_stops(self, df):
         if df.empty:
             return []
-        df = df.sort_values('timestamp').reset_index(drop=True)
+        df = df.sort_values("timestamp").reset_index(drop=True)
         stops = []
         current = {
-            'lat': df.iloc[0]['latitude'], 'lon': df.iloc[0]['longitude'],
-            'start_time': df.iloc[0]['timestamp'], 'end_time': df.iloc[0]['timestamp'],
-            'batteries': [df.iloc[0].get('battery')], 'charging': df.iloc[0].get('charging'),
-            'address': df.iloc[0].get('address', 'Unknown'), 'count': 1
+            "lat": df.iloc[0]["latitude"],
+            "lon": df.iloc[0]["longitude"],
+            "start_time": df.iloc[0]["timestamp"],
+            "end_time": df.iloc[0]["timestamp"],
+            "batteries": [df.iloc[0].get("battery")],
+            "charging": df.iloc[0].get("charging"),
+            "address": df.iloc[0].get("address", "Unknown"),
+            "count": 1,
         }
 
         for i in range(1, len(df)):
             row = df.iloc[i]
-            dist = self.haversine(current['lon'], current['lat'], row['longitude'], row['latitude'])
+            dist = self.haversine(current["lon"], current["lat"], row["longitude"], row["latitude"])
 
             if dist < STOP_DISTANCE_METERS:
-                current['end_time'] = row['timestamp']
-                current['batteries'].append(row.get('battery'))
-                current['charging'] = row.get('charging')
-                current['count'] += 1
+                current["end_time"] = row["timestamp"]
+                current["batteries"].append(row.get("battery"))
+                current["charging"] = row.get("charging")
+                current["count"] += 1
             else:
                 stops.append(current)
                 current = {
-                    'lat': row['latitude'], 'lon': row['longitude'],
-                    'start_time': row['timestamp'], 'end_time': row['timestamp'],
-                    'batteries': [row.get('battery')], 'charging': row.get('charging'),
-                    'address': row.get('address', 'Unknown'), 'count': 1
+                    "lat": row["latitude"],
+                    "lon": row["longitude"],
+                    "start_time": row["timestamp"],
+                    "end_time": row["timestamp"],
+                    "batteries": [row.get("battery")],
+                    "charging": row.get("charging"),
+                    "address": row.get("address", "Unknown"),
+                    "count": 1,
                 }
         stops.append(current)
         return stops
 
-    def generate_map(self, output_file='location_map.html', days=None, person_filter=None):
+    def generate_map(self, output_file="location_map.html", days=None, person_filter=None):
         all_locations = []
         for person, locations in self.history.items():
             if person_filter and person != person_filter:
                 continue
             for loc in locations:
                 loc_copy = dict(loc)
-                loc_copy['person'] = person
+                loc_copy["person"] = person
                 all_locations.append(loc_copy)
 
         if not all_locations:
@@ -241,51 +251,44 @@ class LocationTracker:
             return None
 
         df = pd.DataFrame(all_locations)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
 
         if days:
             cutoff = datetime.now(UTC) - timedelta(days=days)
-            df = df[df['timestamp'] >= cutoff]
+            df = df[df["timestamp"] >= cutoff]
             if df.empty:
                 log.warning("No data in the last %d days.", days)
                 return None
 
         m = folium.Map(
-            location=[df['latitude'].mean(), df['longitude'].mean()],
-            zoom_start=14,
-            tiles='CartoDB positron'
+            location=[df["latitude"].mean(), df["longitude"].mean()], zoom_start=14, tiles="CartoDB positron"
         )
 
         # Add tile layer options
-        folium.TileLayer('OpenStreetMap', name='Street Map').add_to(m)
-        folium.TileLayer('CartoDB dark_matter', name='Dark Mode').add_to(m)
+        folium.TileLayer("OpenStreetMap", name="Street Map").add_to(m)
+        folium.TileLayer("CartoDB dark_matter", name="Dark Mode").add_to(m)
 
-        people = df['person'].unique()
+        people = df["person"].unique()
         color_map = {p: COLORS[i % len(COLORS)] for i, p in enumerate(people)}
 
         for person in people:
-            person_df = df[df['person'] == person].sort_values('timestamp').reset_index(drop=True)
+            person_df = df[df["person"] == person].sort_values("timestamp").reset_index(drop=True)
             color = color_map[person]
 
             # Feature group for toggling
             fg = folium.FeatureGroup(name=person)
 
             # Draw path
-            coordinates = [[row['latitude'], row['longitude']] for _, row in person_df.iterrows()]
+            coordinates = [[row["latitude"], row["longitude"]] for _, row in person_df.iterrows()]
             if len(coordinates) > 1:
                 folium.PolyLine(
-                    coordinates,
-                    weight=3,
-                    color=color,
-                    opacity=0.6,
-                    smooth_factor=1.5,
-                    dash_array='5 8'
+                    coordinates, weight=3, color=color, opacity=0.6, smooth_factor=1.5, dash_array="5 8"
                 ).add_to(fg)
 
             # Draw stops
             stops = self._compute_stops(person_df)
             for stop in stops:
-                duration = stop['end_time'] - stop['start_time']
+                duration = stop["end_time"] - stop["start_time"]
                 minutes = duration.total_seconds() / 60.0
 
                 if minutes < 5:
@@ -299,10 +302,10 @@ class LocationTracker:
                 else:
                     radius = 16
 
-                valid_batteries = [b for b in stop['batteries'] if b is not None]
+                valid_batteries = [b for b in stop["batteries"] if b is not None]
                 avg_battery = int(sum(valid_batteries) / len(valid_batteries)) if valid_batteries else None
                 batt_str = f"{avg_battery}%" if avg_battery is not None else "N/A"
-                charging_icon = " (charging)" if stop['charging'] else ""
+                charging_icon = " (charging)" if stop["charging"] else ""
 
                 if minutes < 1:
                     duration_str = "Passing through"
@@ -317,26 +320,26 @@ class LocationTracker:
                     <div style="background: {color}; color: white; padding: 8px 12px; margin: -10px -10px 10px -10px; font-weight: 600; font-size: 14px; border-radius: 4px 4px 0 0;">
                         {person}
                     </div>
-                    <p style="margin: 4px 0; font-size: 13px;"><b>Address:</b> {stop['address']}</p>
+                    <p style="margin: 4px 0; font-size: 13px;"><b>Address:</b> {stop["address"]}</p>
                     <hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;">
-                    <p style="margin: 4px 0; font-size: 13px;"><b>Date:</b> {stop['start_time'].strftime('%b %d, %Y')}</p>
+                    <p style="margin: 4px 0; font-size: 13px;"><b>Date:</b> {stop["start_time"].strftime("%b %d, %Y")}</p>
                     <p style="margin: 4px 0; font-size: 13px;"><b>Time:</b> {time_str}</p>
                     <p style="margin: 4px 0; font-size: 13px;"><b>Duration:</b> {duration_str}</p>
                     <p style="margin: 4px 0; font-size: 13px;"><b>Battery:</b> {batt_str}{charging_icon}</p>
-                    <p style="margin: 4px 0; font-size: 13px;"><b>Pings:</b> {stop['count']}</p>
+                    <p style="margin: 4px 0; font-size: 13px;"><b>Pings:</b> {stop["count"]}</p>
                 </div>
                 """
 
                 folium.CircleMarker(
-                    location=[stop['lat'], stop['lon']],
+                    location=[stop["lat"], stop["lon"]],
                     radius=radius,
                     popup=folium.Popup(popup_html, max_width=280),
                     tooltip=f"{person}: {stop['address']} ({duration_str})",
-                    color='#ffffff',
+                    color="#ffffff",
                     weight=2,
                     fill=True,
                     fillColor=color,
-                    fill_opacity=0.85
+                    fill_opacity=0.85,
                 ).add_to(fg)
 
             fg.add_to(m)
@@ -349,10 +352,10 @@ class LocationTracker:
         return output_file
 
     def _add_legend(self, m, color_map):
-        people_items = ''.join(
+        people_items = "".join(
             f'<div style="display:flex;align-items:center;margin-bottom:5px;">'
             f'<div style="width:12px;height:12px;background:{c};border-radius:50%;margin-right:8px;border:2px solid white;"></div>'
-            f'<span>{p}</span></div>'
+            f"<span>{p}</span></div>"
             for p, c in color_map.items()
         )
         legend_html = f"""

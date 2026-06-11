@@ -1,4 +1,5 @@
 """Location Tracker CLI - simple on/off interface."""
+
 import argparse
 import json
 import logging
@@ -75,7 +76,8 @@ def _is_running():
         return False
     result = subprocess.run(
         ["ps", "-p", str(pid), "-o", "args="],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if "_serve" in result.stdout:
         return True
@@ -89,6 +91,7 @@ def _start():
         return
 
     from cookie_store import migrate_plaintext_to_encrypted
+
     migrate_plaintext_to_encrypted()
 
     log_path = Path(".tracker.log")
@@ -124,6 +127,7 @@ def _stop():
 
 def _serve():
     from dashboard import run_dashboard
+
     run_dashboard(
         data_file=DATA_FILE,
         cookies_file=COOKIES_FILE,
@@ -187,7 +191,9 @@ def _dns_add():
     log.info("  Adding '%s' to /etc/hosts (requires sudo)...", hosts_entry)
     result = subprocess.run(
         ["sudo", "tee", "-a", "/etc/hosts"],
-        input=hosts_entry + "\n", text=True, capture_output=True,
+        input=hosts_entry + "\n",
+        text=True,
+        capture_output=True,
     )
     if result.returncode == 0:
         log.info("  Hostname configured.")
@@ -210,16 +216,15 @@ def _dns_remove():
 
 def _pf_add():
     """Set up pfctl port forwarding from port 80 to the app port."""
-    anchor_content = (
-        f"rdr pass on lo0 inet proto tcp "
-        f"from any to 127.0.0.1 port 80 -> 127.0.0.1 port {PORT}\n"
-    )
+    anchor_content = f"rdr pass on lo0 inet proto tcp from any to 127.0.0.1 port 80 -> 127.0.0.1 port {PORT}\n"
 
     # Write anchor file
     log.info("  Creating pf anchor (requires sudo)...")
     result = subprocess.run(
         ["sudo", "tee", PF_ANCHOR_FILE],
-        input=anchor_content, text=True, capture_output=True,
+        input=anchor_content,
+        text=True,
+        capture_output=True,
     )
     if result.returncode != 0:
         log.error("  Failed to create pf anchor file.")
@@ -237,7 +242,9 @@ def _pf_add():
         lines_to_add = rdr_line + "\n" + load_line + "\n"
         subprocess.run(
             ["sudo", "tee", "-a", "/etc/pf.conf"],
-            input=lines_to_add, text=True, capture_output=True,
+            input=lines_to_add,
+            text=True,
+            capture_output=True,
         )
 
     # Reload pf rules
@@ -281,6 +288,7 @@ def _test_cookies():
     log.info("Testing cookies...")
     try:
         from locationsharinglib import Service
+
         email = _get_email()
         service = Service(cookies_file=tmp_path, authenticating_account=email)
         people = service.get_all_people()
@@ -316,7 +324,7 @@ def _install_launchd():
     <key>ProgramArguments</key>
     <array>
         <string>{python}</string>
-        <string>{project_dir / 'main.py'}</string>
+        <string>{project_dir / "main.py"}</string>
         <string>_serve</string>
     </array>
     <key>WorkingDirectory</key>
@@ -326,9 +334,9 @@ def _install_launchd():
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>{project_dir / '.tracker.log'}</string>
+    <string>{project_dir / ".tracker.log"}</string>
     <key>StandardErrorPath</key>
-    <string>{project_dir / '.tracker.log'}</string>
+    <string>{project_dir / ".tracker.log"}</string>
 </dict>
 </plist>
 """
@@ -419,6 +427,7 @@ def cli():
         _setup()
     elif args.command == "cookies":
         from get_cookies import generate_cookies_txt
+
         generate_cookies_txt()
     elif args.command == "test":
         _test_cookies()
@@ -446,14 +455,17 @@ def cli():
             _pf_add()
     elif args.command == "map":
         from tracker import LocationTracker
+
         tracker = LocationTracker(COOKIES_FILE, _get_email(), DATA_FILE)
         tracker.generate_map(output_file=args.output, days=args.days)
     elif args.command == "stats":
         from tracker import LocationTracker
+
         tracker = LocationTracker(COOKIES_FILE, _get_email(), DATA_FILE)
         tracker.print_stats()
     elif args.command == "where":
         from db import LocationDB
+
         db = LocationDB(DATA_FILE)
         people = db.get_people()
         match = [p for p in people if args.person.lower() in p.lower()]
@@ -462,9 +474,14 @@ def cli():
         for person in match:
             loc = db.get_latest(person)
             if loc:
-                log.info("%s: (%.4f, %.4f) | %s | %s",
-                         person, loc["latitude"], loc["longitude"],
-                         loc.get("address", ""), loc["timestamp"])
+                log.info(
+                    "%s: (%.4f, %.4f) | %s | %s",
+                    person,
+                    loc["latitude"],
+                    loc["longitude"],
+                    loc.get("address", ""),
+                    loc["timestamp"],
+                )
             else:
                 log.info("%s: no data", person)
         db.close()
@@ -472,6 +489,7 @@ def cli():
         from datetime import datetime, timedelta
 
         from db import LocationDB
+
         db = LocationDB(DATA_FILE)
         people = db.get_people()
         match = [p for p in people if args.person.lower() in p.lower()]
@@ -482,14 +500,19 @@ def cli():
             locs = db.get_locations(person=person, since=since)
             log.info("--- %s (%d points, last %d day(s)) ---", person, len(locs), args.days)
             for loc in locs[-20:]:
-                log.info("  %s | (%.4f, %.4f) | %s",
-                         loc["timestamp"][:19], loc["latitude"], loc["longitude"],
-                         loc.get("address", ""))
+                log.info(
+                    "  %s | (%.4f, %.4f) | %s",
+                    loc["timestamp"][:19],
+                    loc["latitude"],
+                    loc["longitude"],
+                    loc.get("address", ""),
+                )
             if len(locs) > 20:
                 log.info("  ... and %d more (showing last 20)", len(locs) - 20)
         db.close()
     elif args.command == "purge":
         from db import LocationDB
+
         db = LocationDB(DATA_FILE)
         count = db.purge_older_than(args.days)
         log.info("Purged %d records older than %d days.", count, args.days)
