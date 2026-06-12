@@ -1,15 +1,14 @@
 import logging
 import math
-import os
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import folium
 import pandas as pd
-from locationsharinglib import InvalidCookies, InvalidData, Service
 
 from db import LocationDB
+from providers import GoogleLocationProvider, ProviderAuthError, ProviderError
 
 log = logging.getLogger(__name__)
 
@@ -18,10 +17,9 @@ STOP_DISTANCE_METERS = 25
 
 
 class LocationTracker:
-    def __init__(self, cookies_file, email, data_file="location_history.db"):
-        self.cookies_file = cookies_file
-        self.email = email
+    def __init__(self, cookies_file, email, data_file="location_history.db", provider=None):
         self.db = LocationDB(data_file)
+        self.provider = provider or GoogleLocationProvider(cookies_file, email)
         self._stats_cache = None
         self._stats_cache_time = 0
         self._stats_cache_points = 0
@@ -47,91 +45,48 @@ class LocationTracker:
         c = 2 * math.asin(math.sqrt(a))
         return c * 6371000
 
-    def _try_refresh_cookies(self):
-        """Attempt headless cookie refresh using persistent browser profile."""
-        try:
-            from playwright.sync_api import sync_playwright
-
-            from cookie_store import encrypt_cookies
-            from get_cookies import STEALTH_SCRIPTS, _has_auth_cookies, _write_cookies_file
-
-            with sync_playwright() as p:
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir="./browser_profile",
-                    headless=True,
-                    args=["--disable-blink-features=AutomationControlled"],
-                )
-                context.add_init_script(STEALTH_SCRIPTS)
-                page = context.pages[0] if context.pages else context.new_page()
-                page.goto("https://www.google.com/maps", wait_until="networkidle", timeout=30000)
-
-                cookies = context.cookies()
-                context.close()
-
-                if _has_auth_cookies(cookies):
-                    _write_cookies_file(cookies)
-                    encrypt_cookies("cookies.txt", self.cookies_file)
-                    return True
-            return False
-        except Exception as e:
-            log.warning("Cookie refresh failed: %s", e)
-            return False
-
     def poll_location(self):
         try:
-            from cookie_store import decrypt_to_tempfile, has_encrypted_cookies
+            locations = self.provider.get_locations()
 
-            if has_encrypted_cookies(self.cookies_file):
-                tmp_path = decrypt_to_tempfile(self.cookies_file)
-                if not tmp_path:
-                    log.error("Cannot decrypt cookies. Re-run: location-tracker cookies")
-                    return False
-                try:
-                    service = Service(cookies_file=tmp_path, authenticating_account=self.email)
-                finally:
-                    os.unlink(tmp_path)
-            else:
-                service = Service(cookies_file=self.cookies_file, authenticating_account=self.email)
-
-            for person in service.get_all_people():
-                person_id = person.full_name or person.email or "Unknown"
-                ts = datetime.now(UTC).isoformat()
-                battery = getattr(person, "battery_level", None)
-                charging = getattr(person, "charging", None)
-                address = getattr(person, "address", None) or "Unknown Address"
-
+            for loc in locations:
                 self.db.add_location(
-                    person=person_id,
-                    timestamp=ts,
-                    latitude=person.latitude,
-                    longitude=person.longitude,
-                    accuracy=getattr(person, "accuracy", None),
-                    battery=battery,
-                    charging=charging,
-                    address=address,
+                    person=loc.person_id,
+                    timestamp=loc.timestamp,
+                    latitude=loc.latitude,
+                    longitude=loc.longitude,
+                    accuracy=loc.accuracy,
+                    battery=loc.battery,
+                    charging=loc.charging,
+                    address=loc.address,
                 )
 
-                batt_str = f"{battery}%" if battery is not None else "N/A"
+                batt_str = f"{loc.battery}%" if loc.battery is not None else "N/A"
                 log.info(
-                    "Ping: %s | Batt: %s | Coords: (%.4f, %.4f)", person_id, batt_str, person.latitude, person.longitude
+                    "Ping: %s | Batt: %s | Coords: (%.4f, %.4f)", loc.person_id, batt_str, loc.latitude, loc.longitude
                 )
 
+            self.db.record_poll(success=True)
             return True
 
-        except InvalidCookies:
-            log.warning("Cookies expired. Attempting automatic refresh...")
-            if self._try_refresh_cookies():
-                log.info("Cookies refreshed successfully. Retrying poll.")
+        except ProviderAuthError:
+            self.db.record_poll(success=False, error_type="auth", error_message="credentials expired")
+            log.warning("Auth expired. Attempting automatic refresh...")
+            if hasattr(self.provider, "try_refresh") and self.provider.try_refresh():
+                log.info("Auth refreshed successfully. Retrying poll.")
                 return self.poll_location()
-            log.error("Auto-refresh failed. Re-run: location-tracker cookies")
+            log.error("Auto-refresh failed. %s", self.provider.auth_instructions())
             return False
-        except InvalidData as e:
-            log.warning("Poll returned invalid data (transient): %s", e)
+        except ProviderError as e:
+            self.db.record_poll(success=False, error_type="provider", error_message=str(e))
+            log.warning("Poll failed (provider): %s", e)
             return False
         except (ConnectionError, TimeoutError, OSError) as e:
+            self.db.record_poll(success=False, error_type="network", error_message=str(e))
             log.warning("Poll failed (network): %s", e)
             return False
         except Exception as e:
+            self.db.record_poll(success=False, error_type="unexpected", error_message=str(e))
             log.error("Poll failed (unexpected): %s: %s", type(e).__name__, e)
             return False
 

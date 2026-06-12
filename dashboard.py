@@ -118,10 +118,18 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
     poll_lock = threading.Lock()
 
     def background_poll():
+        consecutive_failures = 0
         while True:
             try:
-                tracker.poll_location()
-                interval, category = _adaptive_interval(tracker.history, poll_interval)
+                success = tracker.poll_location()
+                if success:
+                    consecutive_failures = 0
+                    interval, category = _adaptive_interval(tracker.history, poll_interval)
+                else:
+                    consecutive_failures += 1
+                    backoff = min(poll_interval * (2**consecutive_failures), 1800)
+                    interval = backoff
+                    category = "error"
                 with poll_lock:
                     poll_state["interval"] = interval
                     poll_state["category"] = category
@@ -129,7 +137,8 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
                 time.sleep(interval)
             except Exception as e:
                 log.error("Poll thread error: %s: %s", type(e).__name__, e)
-                time.sleep(poll_interval)
+                consecutive_failures += 1
+                time.sleep(min(poll_interval * (2**consecutive_failures), 1800))
 
     poll_thread = threading.Thread(target=background_poll, daemon=True)
     poll_thread.start()
@@ -138,7 +147,10 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
     def index():
         return render_template("index.html")
 
+    API_VERSION = 1
+
     @app.route("/api/locations")
+    @app.route("/api/v1/locations")
     def api_locations():
         days = request.args.get("days", "0", type=str)
         try:
@@ -155,13 +167,15 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
         speed_info = {}
         for person, pts in data.items():
             speed_info[person] = _speed_info_for_points(pts)
-        return jsonify({"locations": data, "speed_info": speed_info})
+        return jsonify({"api_version": API_VERSION, "locations": data, "speed_info": speed_info})
 
     @app.route("/api/stats")
+    @app.route("/api/v1/stats")
     def api_stats():
         return jsonify(tracker.get_stats())
 
     @app.route("/api/self-location", methods=["POST"])
+    @app.route("/api/v1/self-location", methods=["POST"])
     def api_self_location():
         data = request.get_json()
         if not data or "latitude" not in data or "longitude" not in data:
@@ -187,6 +201,7 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
         return jsonify({"ok": True})
 
     @app.route("/api/poll-status")
+    @app.route("/api/v1/poll-status")
     def api_poll_status():
         with poll_lock:
             return jsonify(
@@ -196,7 +211,13 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
                 }
             )
 
+    @app.route("/api/health")
+    @app.route("/api/v1/health")
+    def api_health():
+        return jsonify(tracker.db.get_health())
+
     @app.route("/api/export")
+    @app.route("/api/v1/export")
     def api_export():
         fmt = request.args.get("format", "json")
         history = tracker.history

@@ -15,27 +15,37 @@ log = logging.getLogger(__name__)
 CONFIG_DIR = Path.home() / ".config" / "location-tracker"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
+IS_MACOS = sys.platform == "darwin"
+
 PID_FILE = Path(__file__).parent / ".tracker.pid"
-DATA_FILE = "location_history.db"
-COOKIES_FILE = "cookies.enc"
-PORT = 7070
-POLL_INTERVAL = 300
-HOSTNAME = "tracker.local"
-CUSTOM_URL = "http://tracker.local"
 PF_ANCHOR = "com.locationtracker"
 PF_ANCHOR_FILE = f"/etc/pf.anchors/{PF_ANCHOR}"
+
+DEFAULTS = {
+    "email": "",
+    "port": 7070,
+    "poll_interval": 300,
+    "hostname": "tracker.local",
+    "data_file": "location_history.db",
+    "cookies_file": "cookies.enc",
+}
 
 
 def _load_config():
     """Load config from env vars, then config file, then defaults."""
-    config = {"email": ""}
+    config = dict(DEFAULTS)
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE) as f:
-                config.update(json.load(f))
-        except (json.JSONDecodeError, OSError):
-            pass
-    config["email"] = os.environ.get("LOCATION_TRACKER_EMAIL", config.get("email", ""))
+                stored = json.load(f)
+                for k in DEFAULTS:
+                    if k in stored:
+                        config[k] = stored[k]
+        except (json.JSONDecodeError, OSError) as e:
+            log.warning("Failed to read config: %s", e)
+    config["email"] = os.environ.get("LOCATION_TRACKER_EMAIL", config["email"])
+    if os.environ.get("LOCATION_TRACKER_PORT"):
+        config["port"] = int(os.environ["LOCATION_TRACKER_PORT"])
     return config
 
 
@@ -43,6 +53,22 @@ def _save_config(config):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
+
+
+def _cfg(key):
+    """Get a config value by key."""
+    return _load_config()[key]
+
+
+# Module-level shortcuts (read once at import; overridden by config/env)
+_c = _load_config()
+PORT = _c["port"]
+POLL_INTERVAL = _c["poll_interval"]
+HOSTNAME = _c["hostname"]
+CUSTOM_URL = f"http://{_c['hostname']}"
+DATA_FILE = _c["data_file"]
+COOKIES_FILE = _c["cookies_file"]
+del _c
 
 
 def _get_email():
@@ -94,7 +120,7 @@ def _start():
 
     migrate_plaintext_to_encrypted()
 
-    if not _dns_is_configured():
+    if IS_MACOS and not _dns_is_configured():
         _dns_add()
         _pf_add()
 
@@ -320,7 +346,10 @@ LAUNCHD_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.pli
 
 
 def _install_launchd():
-    """Install a launchd plist so the tracker starts on login."""
+    """Install a launchd plist so the tracker starts on login (macOS only)."""
+    if not IS_MACOS:
+        log.error("launchd is macOS only. On Linux, use systemd.")
+        return
     project_dir = Path(__file__).parent.resolve()
     python = sys.executable
     plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -394,6 +423,11 @@ def cli():
 
     config_parser = subparsers.add_parser("config", help="Configure settings")
     config_parser.add_argument("--email", help="Google account email for location sharing")
+    config_parser.add_argument("--port", type=int, help="Dashboard port (default: 7070)")
+    config_parser.add_argument("--hostname", help="Custom hostname (default: tracker.local)")
+    config_parser.add_argument(
+        "--poll-interval", type=int, dest="poll_interval", help="Default poll interval in seconds"
+    )
 
     subparsers.add_parser("install", help="Install as persistent service (survives reboot)")
     subparsers.add_parser("uninstall", help="Remove the persistent service")
@@ -441,10 +475,15 @@ def cli():
         _test_cookies()
     elif args.command == "config":
         config = _load_config()
-        if args.email:
-            config["email"] = args.email
+        changed = False
+        for key in ("email", "port", "hostname", "poll_interval"):
+            val = getattr(args, key, None)
+            if val is not None:
+                config[key] = val
+                changed = True
+                log.info("  %s set to: %s", key, val)
+        if changed:
             _save_config(config)
-            log.info("Email set to: %s", args.email)
         else:
             log.info("Config file: %s", CONFIG_FILE)
             for k, v in config.items():

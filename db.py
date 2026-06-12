@@ -6,29 +6,40 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS locations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    person TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    latitude REAL NOT NULL,
-    longitude REAL NOT NULL,
-    accuracy REAL,
-    battery INTEGER,
-    charging INTEGER,
-    address TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_person ON locations(person);
-CREATE INDEX IF NOT EXISTS idx_timestamp ON locations(timestamp);
-CREATE INDEX IF NOT EXISTS idx_person_timestamp ON locations(person, timestamp);
-
-CREATE TABLE IF NOT EXISTS meta (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
-"""
+MIGRATIONS = {
+    0: """
+        CREATE TABLE IF NOT EXISTS locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            accuracy REAL,
+            battery INTEGER,
+            charging INTEGER,
+            address TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_person ON locations(person);
+        CREATE INDEX IF NOT EXISTS idx_timestamp ON locations(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_person_timestamp ON locations(person, timestamp);
+        CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+    """,
+    1: """
+        CREATE TABLE IF NOT EXISTS health (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            success INTEGER NOT NULL,
+            error_type TEXT,
+            error_message TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_health_timestamp ON health(timestamp);
+    """,
+}
 
 
 class LocationDB:
@@ -38,14 +49,32 @@ class LocationDB:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=5000")
-        self._init_schema()
+        self._run_migrations()
 
-    def _init_schema(self):
-        self.conn.executescript(SCHEMA)
-        row = self.conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        if row is None:
-            self.conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
-            self.conn.commit()
+    def _get_version(self):
+        try:
+            row = self.conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+            return int(row["value"]) if row else 0
+        except sqlite3.OperationalError:
+            return 0
+
+    def _set_version(self, version):
+        self.conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
+            (str(version),),
+        )
+        self.conn.commit()
+
+    def _run_migrations(self):
+        current = self._get_version()
+        if current >= SCHEMA_VERSION:
+            return
+        for version in range(current, SCHEMA_VERSION):
+            if version in MIGRATIONS:
+                log.info("Running migration %d -> %d...", version, version + 1)
+                self.conn.executescript(MIGRATIONS[version])
+        self._set_version(SCHEMA_VERSION)
+        log.info("Database at schema version %d.", SCHEMA_VERSION)
 
     def add_location(
         self, person, timestamp, latitude, longitude, accuracy=None, battery=None, charging=None, address=None
@@ -104,6 +133,32 @@ class LocationDB:
             "SELECT * FROM locations WHERE person = ? ORDER BY timestamp DESC LIMIT 1", (person,)
         ).fetchone()
         return dict(row) if row else None
+
+    def record_poll(self, success, error_type=None, error_message=None):
+        self.conn.execute(
+            "INSERT INTO health (timestamp, success, error_type, error_message) VALUES (?, ?, ?, ?)",
+            (datetime.now(UTC).isoformat(), 1 if success else 0, error_type, error_message),
+        )
+        self.conn.commit()
+
+    def get_health(self):
+        last_success = self.conn.execute(
+            "SELECT timestamp FROM health WHERE success = 1 ORDER BY timestamp DESC LIMIT 1"
+        ).fetchone()
+        recent = self.conn.execute(
+            "SELECT success, error_type, error_message, timestamp FROM health ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+        recent_list = [dict(r) for r in recent]
+        consecutive_failures = 0
+        for r in recent_list:
+            if r["success"]:
+                break
+            consecutive_failures += 1
+        return {
+            "last_success": last_success["timestamp"] if last_success else None,
+            "consecutive_failures": consecutive_failures,
+            "recent": recent_list[:5],
+        }
 
     def purge_older_than(self, days):
         from datetime import timedelta
