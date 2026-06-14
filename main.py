@@ -12,20 +12,21 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+APP_DIR = Path.home() / ".local" / "share" / "location-tracker"
 CONFIG_DIR = Path.home() / ".config" / "location-tracker"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 IS_MACOS = sys.platform == "darwin"
 
-PID_FILE = Path(__file__).parent / ".tracker.pid"
+PID_FILE = APP_DIR / ".tracker.pid"
 
 DEFAULTS = {
     "email": "",
     "port": 80,
     "poll_interval": 300,
     "hostname": "tracker.local",
-    "data_file": "location_history.db",
-    "cookies_file": "cookies.enc",
+    "data_file": str(APP_DIR / "location_history.db"),
+    "cookies_file": str(APP_DIR / "cookies.enc"),
 }
 
 
@@ -134,6 +135,8 @@ def _start():
         log.info("Already running (pid %d). Dashboard: %s", _read_pid(), CUSTOM_URL)
         return
 
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+
     from cookie_store import migrate_plaintext_to_encrypted
 
     migrate_plaintext_to_encrypted()
@@ -142,9 +145,9 @@ def _start():
     if IS_MACOS and not _dns_is_configured():
         _dns_add()
 
-    log_path = Path(".tracker.log")
+    log_path = APP_DIR / "tracker.log"
     if log_path.exists() and log_path.stat().st_size > 10 * 1024 * 1024:
-        log_path.rename(".tracker.log.old")
+        log_path.rename(log_path.with_suffix(".log.old"))
 
     env = os.environ.copy()
     cmd = [sys.executable, __file__, "_serve"]
@@ -204,15 +207,19 @@ def _setup():
     """Full setup: install browser, configure DNS, authenticate, start, and open dashboard."""
     import webbrowser
 
+    APP_DIR.mkdir(parents=True, exist_ok=True)
     log.info("--- Location Tracker Setup ---")
     log.info("")
 
-    # Step 1: Check email
+    # Step 1: Ensure email is configured
     config = _load_config()
     if not config["email"]:
-        log.error("Email not configured. Run first:")
-        log.error("  location-tracker config --email you@gmail.com")
-        return
+        email = input("Enter your Google account email: ").strip()
+        if not email:
+            log.error("Email is required.")
+            return
+        config["email"] = email
+        _save_config(config)
     log.info("  Email: %s", config["email"])
     log.info("")
 
@@ -244,8 +251,19 @@ def _setup():
     log.info("[4/4] Starting tracker...")
     _start()
     import time
+    import urllib.request
 
-    time.sleep(2)
+    log.info("  Waiting for dashboard to start...")
+    for _ in range(15):
+        time.sleep(1)
+        try:
+            urllib.request.urlopen(f"http://localhost:{PORT}/", timeout=2)  # noqa: S310
+            break
+        except Exception:  # noqa: S110
+            pass
+    else:
+        log.warning("  Dashboard may still be starting. Check: %s", CUSTOM_URL)
+
     webbrowser.open(CUSTOM_URL)
     log.info("")
     log.info("--- Setup Complete ---")
@@ -356,15 +374,15 @@ def _install_launchd():
         <string>_serve</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>{project_dir}</string>
+    <string>{APP_DIR}</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>{project_dir / ".tracker.log"}</string>
+    <string>{APP_DIR / "tracker.log"}</string>
     <key>StandardErrorPath</key>
-    <string>{project_dir / ".tracker.log"}</string>
+    <string>{APP_DIR / "tracker.log"}</string>
 </dict>
 </plist>
 """

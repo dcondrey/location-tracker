@@ -2,10 +2,13 @@ import logging
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
 log = logging.getLogger(__name__)
+
+BROWSER_PROFILE = str(Path.home() / ".local" / "share" / "location-tracker" / "browser_profile")
 
 # Multiple cookie patterns Google may use for authenticated sessions.
 # Checking several guards against Google renaming any single cookie.
@@ -115,7 +118,7 @@ def generate_cookies_txt():
 
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
-            user_data_dir="./browser_profile",
+            user_data_dir=BROWSER_PROFILE,
             headless=False,
             args=[
                 "--disable-blink-features=AutomationControlled",

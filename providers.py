@@ -106,11 +106,11 @@ class GoogleLocationProvider(LocationProvider):
             from playwright.sync_api import sync_playwright
 
             from cookie_store import encrypt_cookies
-            from get_cookies import STEALTH_SCRIPTS, _has_auth_cookies, _write_cookies_file
+            from get_cookies import BROWSER_PROFILE, STEALTH_SCRIPTS, _has_auth_cookies, _write_cookies_file
 
             with sync_playwright() as p:
                 context = p.chromium.launch_persistent_context(
-                    user_data_dir="./browser_profile",
+                    user_data_dir=BROWSER_PROFILE,
                     headless=True,
                     args=["--disable-blink-features=AutomationControlled"],
                 )
