@@ -18,12 +18,10 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 IS_MACOS = sys.platform == "darwin"
 
 PID_FILE = Path(__file__).parent / ".tracker.pid"
-PF_ANCHOR = "com.locationtracker"
-PF_ANCHOR_FILE = f"/etc/pf.anchors/{PF_ANCHOR}"
 
 DEFAULTS = {
     "email": "",
-    "port": 7070,
+    "port": 80,
     "poll_interval": 300,
     "hostname": "tracker.local",
     "data_file": "location_history.db",
@@ -111,6 +109,26 @@ def _is_running():
     return False
 
 
+def _kill_port_holder():
+    """Detect and kill any process holding our configured port."""
+    result = subprocess.run(
+        ["lsof", "-ti", f":{PORT}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return
+    for pid_str in result.stdout.strip().split("\n"):
+        pid = int(pid_str)
+        log.warning("Port %d held by PID %d. Killing...", PORT, pid)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except PermissionError:
+            subprocess.run(["sudo", "kill", pid_str])
+        except OSError:
+            pass
+
+
 def _start():
     if _is_running():
         log.info("Already running (pid %d). Dashboard: %s", _read_pid(), CUSTOM_URL)
@@ -119,18 +137,21 @@ def _start():
     from cookie_store import migrate_plaintext_to_encrypted
 
     migrate_plaintext_to_encrypted()
+    _kill_port_holder()
 
     if IS_MACOS and not _dns_is_configured():
         _dns_add()
-        _pf_add()
 
     log_path = Path(".tracker.log")
     if log_path.exists() and log_path.stat().st_size > 10 * 1024 * 1024:
         log_path.rename(".tracker.log.old")
 
     env = os.environ.copy()
+    cmd = [sys.executable, __file__, "_serve"]
+    if PORT < 1024:
+        cmd = ["sudo", "-E"] + cmd
     proc = subprocess.Popen(
-        [sys.executable, __file__, "_serve"],
+        cmd,
         env=env,
         start_new_session=True,
         stdout=open(log_path, "a"),
@@ -145,11 +166,16 @@ def _start():
 def _stop():
     pid = _read_pid()
     if pid is None:
+        # Check if something else is holding the port
+        _kill_port_holder()
         log.info("Not running.")
         return
     try:
         os.kill(pid, signal.SIGTERM)
         log.info("Stopped (pid %d).", pid)
+    except PermissionError:
+        subprocess.run(["sudo", "kill", str(pid)])
+        log.info("Stopped (pid %d, via sudo).", pid)
     except OSError:
         log.info("Process already gone.")
     PID_FILE.unlink(missing_ok=True)
@@ -175,12 +201,23 @@ def _status():
 
 
 def _setup():
-    """Run first-time setup: install browser, configure DNS and port forwarding."""
+    """Full setup: install browser, configure DNS, authenticate, start, and open dashboard."""
+    import webbrowser
+
     log.info("--- Location Tracker Setup ---")
     log.info("")
 
-    # Step 1: Install Playwright Chromium
-    log.info("[1/3] Installing Chromium browser for cookie acquisition...")
+    # Step 1: Check email
+    config = _load_config()
+    if not config["email"]:
+        log.error("Email not configured. Run first:")
+        log.error("  location-tracker config --email you@gmail.com")
+        return
+    log.info("  Email: %s", config["email"])
+    log.info("")
+
+    # Step 2: Install Chromium
+    log.info("[1/4] Installing Chromium browser...")
     result = subprocess.run(
         [sys.executable, "-m", "playwright", "install", "chromium"],
     )
@@ -190,20 +227,28 @@ def _setup():
     log.info("  Chromium installed.")
     log.info("")
 
-    # Step 2: Configure /etc/hosts
-    log.info("[2/3] Configuring custom hostname '%s'...", HOSTNAME)
+    # Step 3: Configure DNS
+    log.info("[2/4] Configuring custom hostname '%s'...", HOSTNAME)
     _dns_add()
     log.info("")
 
-    # Step 3: Configure port forwarding
-    log.info("[3/3] Configuring port forwarding (80 -> %d)...", PORT)
-    _pf_add()
+    # Step 4: Authenticate
+    log.info("[3/4] Authenticating with Google...")
+    log.info("")
+    from get_cookies import generate_cookies_txt
+
+    generate_cookies_txt()
     log.info("")
 
-    log.info("--- Setup Complete ---")
+    # Step 5: Start tracker and open browser
+    log.info("[4/4] Starting tracker...")
+    _start()
+    import time
+
+    time.sleep(2)
+    webbrowser.open(CUSTOM_URL)
     log.info("")
-    log.info("  Next step: location-tracker cookies")
-    log.info("  Then:      location-tracker on")
+    log.info("--- Setup Complete ---")
     log.info("  Dashboard: %s", CUSTOM_URL)
 
 
@@ -247,60 +292,6 @@ def _dns_remove():
     else:
         log.error("  Failed to update /etc/hosts.")
 
-
-def _pf_add():
-    """Set up pfctl port forwarding from port 80 to the app port."""
-    anchor_content = f"rdr pass on lo0 inet proto tcp from any to 127.0.0.1 port 80 -> 127.0.0.1 port {PORT}\n"
-
-    # Write anchor file
-    log.info("  Creating pf anchor (requires sudo)...")
-    result = subprocess.run(
-        ["sudo", "tee", PF_ANCHOR_FILE],
-        input=anchor_content,
-        text=True,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        log.error("  Failed to create pf anchor file.")
-        return
-
-    try:
-        pf_conf = Path("/etc/pf.conf").read_text()
-    except PermissionError:
-        pf_conf = ""
-
-    if PF_ANCHOR not in pf_conf:
-        log.info("  Adding anchor to /etc/pf.conf...")
-        rdr_line = f'rdr-anchor "{PF_ANCHOR}"'
-        load_line = f'load anchor "{PF_ANCHOR}" from "{PF_ANCHOR_FILE}"'
-        lines_to_add = rdr_line + "\n" + load_line + "\n"
-        subprocess.run(
-            ["sudo", "tee", "-a", "/etc/pf.conf"],
-            input=lines_to_add,
-            text=True,
-            capture_output=True,
-        )
-
-    # Reload pf rules
-    log.info("  Reloading packet filter...")
-    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
-    log.info("  Port forwarding configured (port 80 -> %d).", PORT)
-
-
-def _pf_remove():
-    """Remove pfctl port forwarding."""
-    log.info("Removing pf port forwarding (requires sudo)...")
-
-    # Remove anchor file
-    subprocess.run(["sudo", "rm", "-f", PF_ANCHOR_FILE])
-
-    # Remove references from pf.conf
-    subprocess.run(
-        ["sudo", "sed", "-i", "", f"/{PF_ANCHOR}/d", "/etc/pf.conf"],
-    )
-
-    # Reload pf rules
-    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
     log.info("  Port forwarding removed.")
 
 
@@ -494,10 +485,8 @@ def cli():
         _uninstall_launchd()
     elif args.command == "dns":
         _dns_add()
-        _pf_add()
     elif args.command == "dns-remove":
         _dns_remove()
-        _pf_remove()
     elif args.command == "map":
         from tracker import LocationTracker
 

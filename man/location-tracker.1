@@ -15,7 +15,7 @@ polling intervals, encrypted cookie storage, and SQLite-backed history.
 .TP
 .B on
 Start the tracker daemon and web dashboard. Automatically configures DNS
-(http://tracker.local) and port forwarding on first run.
+(http://tracker.local) on first run. Uses sudo for port 80.
 .TP
 .B off
 Stop the tracker daemon.
@@ -41,9 +41,10 @@ Set the Google account email used for location sharing.
 Show current configuration.
 .TP
 .B setup
-First-time setup: installs Chromium browser, configures the
+Full setup: installs Chromium browser, configures the
 .I tracker.local
-hostname in /etc/hosts, and sets up port forwarding from port 80 to 7070.
+hostname in /etc/hosts, opens Google sign-in for authentication, starts
+the tracker daemon, and opens the dashboard in your browser.
 .SS Service Management
 .TP
 .B install
@@ -56,10 +57,10 @@ Remove the launchd service.
 .B dns
 Manually set up the
 .I tracker.local
-hostname and port forwarding.
+hostname.
 .TP
 .B dns-remove
-Remove the hostname from /etc/hosts and remove port forwarding rules.
+Remove the hostname from /etc/hosts.
 .SS Querying Data
 .TP
 .B where \fIperson\fR
@@ -148,10 +149,9 @@ SQLite uses WAL mode for concurrent safety. Plaintext cookies.txt files are
 automatically migrated and deleted.
 .SH EXAMPLES
 .nf
-# Initial setup
+# Initial setup (one command after config)
 location-tracker config --email alice@gmail.com
 location-tracker setup
-location-tracker cookies
 
 # Daily use
 location-tracker on

@@ -46,14 +46,11 @@ main() {
     info "Installing dependencies..."
     uv sync
 
-    info "Running application setup..."
-    uv run location-tracker setup
-
+    info "Set your Google email first:"
+    echo "  uv run location-tracker config --email you@gmail.com"
     echo
-    info "All done! Next steps:"
-    echo "  1. Authenticate:  uv run location-tracker cookies"
-    echo "  2. Start tracker: uv run location-tracker on"
-    echo "  3. Open:          http://tracker.local"
+    info "Then run setup (handles everything):"
+    echo "  uv run location-tracker setup"
 }
 
 main "$@"

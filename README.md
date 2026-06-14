@@ -46,17 +46,13 @@ uv run location-tracker setup
 # 1. Set your Google account email
 location-tracker config --email you@gmail.com
 
-# 2. Authenticate with Google (opens a browser window)
-location-tracker cookies
-
-# 3. Verify it works
-location-tracker test
-
-# 4. Start tracking
-location-tracker on
+# 2. One command does everything: install browser, configure DNS, authenticate, start, and open dashboard
+location-tracker setup
 ```
 
-The dashboard opens at **http://tracker.local**. DNS and port forwarding are configured automatically on first start. If that doesn't resolve, use `http://localhost:7070`.
+That's it. The setup command installs Chromium, configures `tracker.local` in `/etc/hosts`, opens a browser for Google sign-in, encrypts the cookies, starts the daemon, and opens the dashboard automatically.
+
+The dashboard runs at **http://tracker.local** (port 80 via `sudo`). If the hostname doesn't resolve, use `http://localhost`.
 
 ## Prerequisites
 
@@ -90,7 +86,7 @@ When cookies expire, the tracker automatically attempts a headless browser refre
 |---------|-------------|
 | `config --email you@gmail.com` | Set the Google account email |
 | `config` | Show current configuration |
-| `setup` | First-time setup: install Chromium, configure DNS and port forwarding |
+| `setup` | Full setup: install browser, DNS, authenticate, start, and open dashboard |
 
 ### Service Management
 
@@ -99,7 +95,7 @@ When cookies expire, the tracker automatically attempts a headless browser refre
 | `install` | Install as a launchd service (auto-start on login) |
 | `uninstall` | Remove the launchd service |
 | `dns` | Manually set up `http://tracker.local` hostname |
-| `dns-remove` | Remove hostname and port forwarding |
+| `dns-remove` | Remove custom hostname |
 
 ### Querying Data
 
