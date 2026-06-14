@@ -152,7 +152,9 @@ def _start():
     env = os.environ.copy()
     cmd = [sys.executable, __file__, "_serve"]
     if PORT < 1024:
-        cmd = ["sudo", "-E"] + cmd
+        log.info("Port %d requires elevated privileges.", PORT)
+        subprocess.run(["sudo", "true"])
+        cmd = ["sudo", "-E", "--non-interactive"] + cmd
     proc = subprocess.Popen(
         cmd,
         env=env,
