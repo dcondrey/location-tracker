@@ -14,6 +14,7 @@ cookies.txt
 cookies.enc
 location_history.json
 location_history.db
+location_history.db-*
 browser_profile/
 .tracker.log*
 .tracker.pid
