@@ -151,11 +151,6 @@ def _start():
     migrate_plaintext_to_encrypted()
     _kill_port_holder()
 
-    if IS_MACOS:
-        if not _dns_is_configured():
-            _dns_add()
-        _pf_setup()
-
     log_path = APP_DIR / "tracker.log"
     if log_path.exists() and log_path.stat().st_size > 10 * 1024 * 1024:
         log_path.rename(log_path.with_suffix(".log.old"))
@@ -335,11 +330,8 @@ def _pf_setup():
             capture_output=True,
         )
 
-    result = subprocess.run(["sudo", "-n", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
-    if result.returncode == 0:
-        log.info("  Port forwarding active (80 -> %d).", PORT)
-    else:
-        log.info("  Port forwarding configured. Activate with: sudo pfctl -ef /etc/pf.conf")
+    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
+    log.info("  Port forwarding active (80 -> %d).", PORT)
 
 
 def _pf_remove():
