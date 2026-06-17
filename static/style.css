@@ -75,7 +75,7 @@ h1 { font-size: 22px; font-weight: 800; margin-bottom: 2px; color: #fff; letter-
 .map-pill.gm-hyb { background: linear-gradient(135deg, #1a3a2a, #0d1f2d); }
 .map-pill.gm-hyb span { color: #8cf; }
 .map-pill.gm-ter { background: linear-gradient(135deg, #d4c9a8, #a8bf98); }
-.map-pill.gm-dark { background: linear-gradient(135deg, #1a1a2e, #16213e); }
+
 
 /* ---- View mode toggle (path / heatmap) ---- */
 .view-toggle { display: flex; gap: 0; margin-bottom: 16px; background: var(--card); border-radius: 8px; border: 1px solid var(--border); overflow: hidden; }

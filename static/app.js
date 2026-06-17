@@ -90,10 +90,6 @@ const tileLayers = {
     maxZoom: 22,
     attribution: "&copy; Google",
   }),
-  dark: L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    { maxZoom: 20, attribution: "&copy; CARTO" },
-  ),
 };
 
 function initMap() {
@@ -600,7 +596,11 @@ async function loadPollStatus() {
     const reason = reasonMap[data.speed_category] || data.speed_category;
     const secs = data.current_interval;
     const label = secs >= 60 ? Math.round(secs / 60) + " min" : secs + "s";
-    el.innerHTML = `Polling every <span class="highlight">${label}</span> &middot; ${reason}`;
+    if (data.error) {
+      el.innerHTML = `Polling every <span class="highlight">${label}</span> &middot; <span style="color:var(--red,#e74c3c)">error: ${data.error}</span>`;
+    } else {
+      el.innerHTML = `Polling every <span class="highlight">${label}</span> &middot; ${reason}`;
+    }
   } catch (e) {
     console.warn(e);
   }
@@ -612,6 +612,14 @@ function toggleSelfTracking() {
   if (!selfTrackingActive) {
     if (!navigator.geolocation) {
       status.textContent = "Geolocation not supported";
+      return;
+    }
+    if (!window.isSecureContext) {
+      status.textContent = "Requires HTTPS or localhost";
+      showToast(
+        "Geolocation requires a secure origin. Use https:// or access via localhost.",
+        "error",
+      );
       return;
     }
     selfTrackingActive = true;

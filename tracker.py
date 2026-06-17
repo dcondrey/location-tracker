@@ -20,6 +20,7 @@ class LocationTracker:
         self._stats_cache = None
         self._stats_cache_time = 0
         self._stats_cache_points = 0
+        self.last_error_type = None
 
         # Auto-migrate from JSON if DB is empty and JSON exists
         json_path = Path(data_file).with_suffix(".json")
@@ -61,10 +62,12 @@ class LocationTracker:
                 )
 
             self.db.record_poll(success=True)
+            self.last_error_type = None
             return True
 
         except ProviderAuthError:
             self.db.record_poll(success=False, error_type="auth", error_message="credentials expired")
+            self.last_error_type = "auth"
             log.warning("Auth expired. Attempting automatic refresh...")
             if hasattr(self.provider, "try_refresh") and self.provider.try_refresh():
                 log.info("Auth refreshed successfully. Retrying poll.")
@@ -73,10 +76,12 @@ class LocationTracker:
             return False
         except ProviderError as e:
             self.db.record_poll(success=False, error_type="provider", error_message=str(e))
+            self.last_error_type = "provider"
             log.warning("Poll failed (provider): %s", e)
             return False
         except (ConnectionError, TimeoutError, OSError) as e:
             self.db.record_poll(success=False, error_type="network", error_message=str(e))
+            self.last_error_type = "network"
             log.warning("Poll failed (network): %s", e)
             return False
         except Exception as e:
@@ -220,7 +225,6 @@ class LocationTracker:
 
         # Add tile layer options
         folium.TileLayer("OpenStreetMap", name="Street Map").add_to(m)
-        folium.TileLayer("CartoDB dark_matter", name="Dark Mode").add_to(m)
 
         people = df["person"].unique()
         color_map = {p: COLORS[i % len(COLORS)] for i, p in enumerate(people)}

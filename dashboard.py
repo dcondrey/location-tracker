@@ -176,7 +176,7 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
     tracker = LocationTracker(cookies_file, email, data_file)
 
     self_name = "Me"
-    poll_state = {"interval": poll_interval, "category": "moderate"}
+    poll_state = {"interval": poll_interval, "category": "moderate", "error": None}
     poll_lock = threading.Lock()
 
     def background_poll():
@@ -315,6 +315,7 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
                 with poll_lock:
                     poll_state["interval"] = int(interval)
                     poll_state["category"] = category
+                    poll_state["error"] = tracker.last_error_type
                 log.info("Next poll in %ds (%s)", int(interval), category)
                 time.sleep(interval)
             except Exception as e:
@@ -390,6 +391,7 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
                 {
                     "current_interval": poll_state["interval"],
                     "speed_category": poll_state["category"],
+                    "error": poll_state["error"],
                 }
             )
 
