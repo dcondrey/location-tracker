@@ -256,6 +256,21 @@ def _setup():
     # Step 5: Start tracker and open browser
     log.info("[4/4] Starting tracker...")
     _start()
+    import time
+    import urllib.request
+
+    time.sleep(1)
+    # Verify port 80 forwarding works
+    try:
+        urllib.request.urlopen(f"http://localhost:{PORT}/", timeout=3)  # noqa: S310
+        try:
+            urllib.request.urlopen("http://localhost:80/", timeout=3)  # noqa: S310
+            log.info("  http://tracker.local is working.")
+        except Exception:
+            log.warning("  Port 80 forwarding not active. Dashboard available at http://tracker.local:%d", PORT)
+    except Exception:
+        log.warning("  Dashboard still starting. Check http://tracker.local:%d", PORT)
+
     webbrowser.open(CUSTOM_URL)
     log.info("")
     log.info("--- Setup Complete ---")
@@ -330,7 +345,11 @@ def _pf_setup():
             capture_output=True,
         )
 
-    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
+    result = subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], stderr=subprocess.DEVNULL)
+    if result.returncode != 0:
+        log.error("  Failed to load pf rules. Try manually: sudo pfctl -ef /etc/pf.conf")
+        return
+    log.info("  Port forwarding loaded.")
 
     # Install a LaunchDaemon so pf rules survive reboots
     pf_plist = Path("/Library/LaunchDaemons/com.locationtracker.pf.plist")
@@ -369,7 +388,11 @@ def _pf_remove():
     log.info("Removing port forwarding (requires sudo)...")
     subprocess.run(["sudo", "rm", "-f", PF_ANCHOR_FILE])
     subprocess.run(["sudo", "sed", "-i", "", f"/{PF_ANCHOR}/d", "/etc/pf.conf"])
-    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
+    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], stderr=subprocess.DEVNULL)
+    pf_plist = Path("/Library/LaunchDaemons/com.locationtracker.pf.plist")
+    if pf_plist.exists():
+        subprocess.run(["sudo", "launchctl", "unload", str(pf_plist)])
+        subprocess.run(["sudo", "rm", "-f", str(pf_plist)])
     log.info("  Port forwarding removed.")
 
 
