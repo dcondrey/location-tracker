@@ -192,21 +192,19 @@ def generate_cookies_txt():
         cookies = context.cookies()
 
         count = _write_cookies_file(cookies)
-        valid = _validate_cookies()
+
+        if not _validate_cookies():
+            log.warning("  Saved %d cookies but validation failed.", count)
+            log.warning("  Encrypting anyway. Try: location-tracker test")
+        else:
+            log.info("  Cookies validated successfully.")
 
         from cookie_store import encrypt_cookies
 
         encrypt_cookies("cookies.txt")
-
-        if valid:
-            log.info("  Saved %d cookies (encrypted).", count)
-            log.info("  Cookies validated successfully.")
-            log.info("")
-            log.info("  Start tracking with: location-tracker on")
-        else:
-            log.info("  Saved %d cookies (encrypted).", count)
-            log.warning("  Warning: could not validate cookies against the API.")
-            log.warning("  They may still work. Try: location-tracker test")
+        log.info("  Saved %d cookies (encrypted).", count)
+        log.info("")
+        log.info("  Start tracking with: location-tracker on")
 
         context.close()
 

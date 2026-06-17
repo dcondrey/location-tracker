@@ -31,9 +31,6 @@ class LocationTracker:
     def history(self):
         return self.db.get_history_dict()
 
-    def save_history(self):
-        pass  # SQLite commits per-insert; no-op for backward compat
-
     def haversine(self, lon1, lat1, lon2, lat2):
         lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
         dlon = lon2 - lon1

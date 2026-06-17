@@ -59,16 +59,16 @@ class GoogleLocationProvider(LocationProvider):
 
         from cookie_store import decrypt_to_tempfile, has_encrypted_cookies
 
-        if has_encrypted_cookies(self.cookies_file):
-            tmp_path = decrypt_to_tempfile(self.cookies_file)
-            if not tmp_path:
-                raise ProviderAuthError("Cannot decrypt cookies.")
-            try:
-                service = Service(cookies_file=tmp_path, authenticating_account=self.email)
-            finally:
-                os.unlink(tmp_path)
-        else:
-            service = Service(cookies_file=self.cookies_file, authenticating_account=self.email)
+        if not has_encrypted_cookies(self.cookies_file):
+            raise ProviderAuthError("No cookies found. Run: location-tracker setup")
+
+        tmp_path = decrypt_to_tempfile(self.cookies_file)
+        if not tmp_path:
+            raise ProviderAuthError("Cannot decrypt cookies. Run: location-tracker cookies")
+        try:
+            service = Service(cookies_file=tmp_path, authenticating_account=self.email)
+        finally:
+            os.unlink(tmp_path)
 
         try:
             people = service.get_all_people()

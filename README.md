@@ -52,7 +52,7 @@ location-tracker setup
 
 That's it. The setup command installs Chromium, configures `tracker.local` in `/etc/hosts`, opens a browser for Google sign-in, encrypts the cookies, starts the daemon, and opens the dashboard automatically.
 
-The dashboard runs at **http://tracker.local** (port 80 via `sudo`). If the hostname doesn't resolve, use `http://localhost`.
+The dashboard runs at **http://tracker.local**. Flask listens on port 7070; macOS packet filter forwards port 80 transparently. If the hostname doesn't resolve, use `http://localhost:7070`.
 
 ## Prerequisites
 
@@ -192,6 +192,35 @@ The dashboard exposes these local API endpoints:
 | GET | `/api/poll-status` | Current polling interval and speed category |
 | GET | `/api/export?format=json` | Export all data (json, csv, geojson) |
 | POST | `/api/self-location` | Submit browser geolocation |
+
+## Data Directory
+
+All data is stored in `~/.local/share/location-tracker/`:
+
+| File | Purpose |
+|------|---------|
+| `location_history.db` | SQLite database with all location records |
+| `cookies.enc` | Encrypted Google auth cookies |
+| `browser_profile/` | Persistent Chromium browser profile for cookie refresh |
+| `tracker.log` | Daemon log file (rotated at 10MB) |
+
+Config is stored in `~/.config/location-tracker/config.json`.
+
+## Troubleshooting
+
+**http://tracker.local doesn't load**:
+- Check DNS: `ping tracker.local` should resolve to 127.0.0.1
+- Check daemon: `location-tracker status`
+- Check port forwarding: `sudo pfctl -sn` should show the rdr rule
+- Try direct port: `http://localhost:7070`
+- Re-run setup: `location-tracker setup`
+
+**"Cookies expired" errors**:
+- The tracker auto-refreshes cookies headlessly when possible
+- If auto-refresh fails, re-run: `location-tracker cookies`
+
+**"No cookies found" on first start**:
+- Run `location-tracker setup` which handles everything
 
 ## Contributing
 

@@ -20,7 +20,7 @@ uv sync
 uv run python main.py _serve
 
 # Run import check
-uv run python -c "import main, tracker, dashboard, db, cookie_store"
+uv run python -c "import main, tracker, dashboard, db, cookie_store, providers"
 ```
 
 ## Project Structure
@@ -58,7 +58,7 @@ Open an issue describing:
 
 1. Create a branch from `main`
 2. Make your changes
-3. Verify imports: `uv run python -c "import main, tracker, dashboard, db"`
+3. Verify imports: `uv run python -c "import main, tracker, dashboard, db, cookie_store, providers"`
 4. Test the dashboard manually: `uv run python main.py _serve`
 5. Open a PR with a clear description of what changed and why
 
