@@ -47,6 +47,13 @@ def _load_config():
     config["email"] = os.environ.get("LOCATION_TRACKER_EMAIL", config["email"])
     if os.environ.get("LOCATION_TRACKER_PORT"):
         config["port"] = int(os.environ["LOCATION_TRACKER_PORT"])
+    # Migrate stale port 80 from older versions (requires sudo, doesn't work)
+    if config["port"] == 80:
+        config["port"] = DEFAULTS["port"]
+    # Ensure data paths are absolute
+    for key in ("data_file", "cookies_file"):
+        if not Path(config[key]).is_absolute():
+            config[key] = str(APP_DIR / config[key])
     return config
 
 
@@ -144,8 +151,9 @@ def _start():
     migrate_plaintext_to_encrypted()
     _kill_port_holder()
 
-    if IS_MACOS and not _dns_is_configured():
-        _dns_add()
+    if IS_MACOS:
+        if not _dns_is_configured():
+            _dns_add()
         _pf_setup()
 
     log_path = APP_DIR / "tracker.log"
@@ -307,32 +315,31 @@ def _pf_is_configured():
 
 def _pf_setup():
     """Set up pfctl to forward port 80 -> app port on loopback."""
-    if _pf_is_configured():
-        log.info("  Port forwarding already configured.")
-        subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
-        return
+    if not _pf_is_configured():
+        anchor_rule = f"rdr pass on lo0 inet proto tcp from any to 127.0.0.1 port 80 -> 127.0.0.1 port {PORT}\n"
 
-    anchor_rule = f"rdr pass on lo0 inet proto tcp from any to 127.0.0.1 port 80 -> 127.0.0.1 port {PORT}\n"
+        log.info("  Setting up port forwarding (80 -> %d, requires sudo)...", PORT)
+        subprocess.run(
+            ["sudo", "tee", PF_ANCHOR_FILE],
+            input=anchor_rule,
+            text=True,
+            capture_output=True,
+        )
 
-    log.info("  Setting up port forwarding (80 -> %d, requires sudo)...", PORT)
-    subprocess.run(
-        ["sudo", "tee", PF_ANCHOR_FILE],
-        input=anchor_rule,
-        text=True,
-        capture_output=True,
-    )
+        rdr_line = f'rdr-anchor "{PF_ANCHOR}"'
+        load_line = f'load anchor "{PF_ANCHOR}" from "{PF_ANCHOR_FILE}"'
+        subprocess.run(
+            ["sudo", "tee", "-a", "/etc/pf.conf"],
+            input=rdr_line + "\n" + load_line + "\n",
+            text=True,
+            capture_output=True,
+        )
 
-    rdr_line = f'rdr-anchor "{PF_ANCHOR}"'
-    load_line = f'load anchor "{PF_ANCHOR}" from "{PF_ANCHOR_FILE}"'
-    subprocess.run(
-        ["sudo", "tee", "-a", "/etc/pf.conf"],
-        input=rdr_line + "\n" + load_line + "\n",
-        text=True,
-        capture_output=True,
-    )
-
-    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
-    log.info("  Port forwarding configured (80 -> %d).", PORT)
+    result = subprocess.run(["sudo", "-n", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
+    if result.returncode == 0:
+        log.info("  Port forwarding active (80 -> %d).", PORT)
+    else:
+        log.info("  Port forwarding configured. Activate with: sudo pfctl -ef /etc/pf.conf")
 
 
 def _pf_remove():
