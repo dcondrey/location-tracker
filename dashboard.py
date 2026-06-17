@@ -27,6 +27,14 @@ def _haversine_m(lat1, lon1, lat2, lon2):
     return 6371000 * 2 * math.asin(math.sqrt(a))
 
 
+def _safe_parse_ts(ts_str):
+    """Parse timestamp, ensuring timezone-aware."""
+    ts = datetime.fromisoformat(ts_str)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return ts
+
+
 def _analyze_movement(points):
     """Analyze recent movement for a person. Returns dict with speed, trend, stationary_seconds."""
     if not points or len(points) < 2:
@@ -38,8 +46,8 @@ def _analyze_movement(points):
         prev, curr = recent[i - 1], recent[i]
         dist = _haversine_m(prev["latitude"], prev["longitude"], curr["latitude"], curr["longitude"])
         try:
-            t1 = datetime.fromisoformat(prev["timestamp"])
-            t2 = datetime.fromisoformat(curr["timestamp"])
+            t1 = _safe_parse_ts(prev["timestamp"])
+            t2 = _safe_parse_ts(curr["timestamp"])
         except (ValueError, TypeError):
             continue
         dt = (t2 - t1).total_seconds()
@@ -78,8 +86,8 @@ def _analyze_movement(points):
             if dist > 25:
                 break
             try:
-                t1 = datetime.fromisoformat(recent[i - 1]["timestamp"])
-                t2 = datetime.fromisoformat(recent[i]["timestamp"])
+                t1 = _safe_parse_ts(recent[i - 1]["timestamp"])
+                t2 = _safe_parse_ts(recent[i]["timestamp"])
                 stationary_seconds += (t2 - t1).total_seconds()
             except (ValueError, TypeError):
                 break

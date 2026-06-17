@@ -73,7 +73,7 @@ _c = _load_config()
 PORT = _c["port"]
 POLL_INTERVAL = _c["poll_interval"]
 HOSTNAME = _c["hostname"]
-CUSTOM_URL = f"http://{_c['hostname']}"
+CUSTOM_URL = f"http://{_c['hostname']}:{_c['port']}"
 DATA_FILE = _c["data_file"]
 COOKIES_FILE = _c["cookies_file"]
 del _c
