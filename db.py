@@ -6,7 +6,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MIGRATIONS = {
     0: """
@@ -38,6 +38,44 @@ MIGRATIONS = {
             error_message TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_health_timestamp ON health(timestamp);
+    """,
+    2: """
+        CREATE TABLE IF NOT EXISTS known_places (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person TEXT NOT NULL,
+            label TEXT,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            radius REAL NOT NULL DEFAULT 75.0,
+            visit_count INTEGER NOT NULL DEFAULT 0,
+            total_dwell_seconds REAL NOT NULL DEFAULT 0,
+            first_seen TEXT NOT NULL,
+            last_seen TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_kp_person ON known_places(person);
+
+        CREATE TABLE IF NOT EXISTS dwell_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person TEXT NOT NULL,
+            place_id INTEGER REFERENCES known_places(id),
+            arrived_at TEXT NOT NULL,
+            departed_at TEXT,
+            duration_seconds REAL,
+            day_of_week INTEGER,
+            hour_of_day INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_dwell_place ON dwell_observations(person, place_id);
+
+        CREATE TABLE IF NOT EXISTS speed_zones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lat REAL NOT NULL,
+            lon REAL NOT NULL,
+            radius_m REAL DEFAULT 200,
+            avg_speed_kmh REAL,
+            observation_count INTEGER DEFAULT 1,
+            last_updated TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_speed_zones_geo ON speed_zones(lat, lon);
     """,
 }
 

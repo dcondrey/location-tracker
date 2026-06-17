@@ -172,22 +172,113 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
     poll_lock = threading.Lock()
 
     def background_poll():
+        from intelligence import Intelligence
+        from intelligence import compute_poll_interval as _compute
+
+        intel = Intelligence(tracker.db.conn)
+        intel.decay_old_observations()
+
+        # Backfill learning data on first run
+        for person in tracker.db.get_people():
+            if person == "Me":
+                continue
+            place_count = intel.conn.execute(
+                "SELECT COUNT(*) as c FROM known_places WHERE person=?", (person,)
+            ).fetchone()["c"]
+            if place_count == 0:
+                locs = tracker.db.get_locations(person=person)
+                if locs:
+                    log.info("Backfilling intelligence for %s...", person)
+                    intel.backfill_from_locations(person, locs)
+
+        person_states = {}
         consecutive_failures = 0
+        last_maintenance = time.time()
+
         while True:
             try:
                 success = tracker.poll_location()
                 if success:
                     consecutive_failures = 0
-                    interval, category = _adaptive_interval(tracker.history, poll_interval)
+                    history = tracker.history
+                    best_interval = 600
+                    best_reason = "idle"
+
+                    for person, points in history.items():
+                        if person == "Me" or not points:
+                            continue
+
+                        latest = points[-1]
+                        m = _analyze_movement(points)
+
+                        # State tracking for arrivals/departures
+                        nearest = intel.find_nearest_place(person, latest["latitude"], latest["longitude"])
+                        at_place = None
+                        if nearest:
+                            d = _haversine_m(
+                                latest["latitude"], latest["longitude"], nearest["latitude"], nearest["longitude"]
+                            )
+                            if d < nearest["radius"]:
+                                at_place = nearest
+
+                        prev = person_states.get(person, {})
+                        prev_place = prev.get("place_id")
+
+                        if prev_place is None and at_place:
+                            intel.record_arrival(person, at_place["id"], latest["timestamp"])
+                        elif prev_place is not None and not at_place:
+                            intel.record_departure(person, prev_place, latest["timestamp"])
+                        elif prev_place is None and not at_place and m["stationary_seconds"] > 300:
+                            new_id = intel.cluster_stop(
+                                person, latest["latitude"], latest["longitude"], latest["timestamp"]
+                            )
+                            at_place = {"id": new_id, "radius": 75}
+                            intel.record_arrival(person, new_id, latest["timestamp"])
+
+                        person_states[person] = {"place_id": at_place["id"] if at_place else None}
+
+                        # Speed zone learning on deceleration
+                        if m["trend"] == "decelerating" and m["speed_kmh"] < 15 and m.get("avg_speed_kmh", 0) > 20:
+                            intel.learn_speed_zones_from_trip(points[-10:])
+
+                        # Compute interval for this person
+                        interval, reason = _compute(
+                            intel,
+                            person,
+                            latest["latitude"],
+                            latest["longitude"],
+                            m["speed_kmh"],
+                            m["trend"],
+                            m["stationary_seconds"],
+                            latest.get("battery"),
+                            latest.get("charging"),
+                        )
+
+                        # Speed zone proximity check
+                        if m["speed_kmh"] >= 5 and intel.near_speed_zone(points[-5:]):
+                            interval = max(4, interval * 0.5)
+                            reason += " +turn"
+
+                        if interval < best_interval:
+                            best_interval = interval
+                            best_reason = reason
+
+                    interval = best_interval
+                    category = best_reason
                 else:
                     consecutive_failures += 1
-                    backoff = min(poll_interval * (2**consecutive_failures), 1800)
-                    interval = backoff
+                    interval = min(poll_interval * (2**consecutive_failures), 1800)
                     category = "error"
+
+                # Daily maintenance
+                if time.time() - last_maintenance > 86400:
+                    intel.decay_old_observations()
+                    last_maintenance = time.time()
+
                 with poll_lock:
-                    poll_state["interval"] = interval
+                    poll_state["interval"] = int(interval)
                     poll_state["category"] = category
-                log.info("Next poll in %ds (speed: %s)", interval, category)
+                log.info("Next poll in %ds (%s)", int(interval), category)
                 time.sleep(interval)
             except Exception as e:
                 log.error("Poll thread error: %s: %s", type(e).__name__, e)

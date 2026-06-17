@@ -21,6 +21,60 @@ function showToast(msg, type) {
   document.getElementById("toast-container").appendChild(el);
   setTimeout(() => el.remove(), 3200);
 }
+const OSRM_URL = "https://router.project-osrm.org/match/v1/driving/";
+const snapCache = {};
+
+function coordsHash(coords) {
+  if (!coords || coords.length === 0) return "";
+  return (
+    coords.length +
+    ":" +
+    coords[0][0].toFixed(4) +
+    "," +
+    coords[coords.length - 1][0].toFixed(4)
+  );
+}
+
+async function snapToRoads(coords) {
+  if (!coords || coords.length < 2) return coords;
+  const hash = coordsHash(coords);
+  if (snapCache[hash]) return snapCache[hash];
+
+  const MAX_PER_REQ = 100;
+  const results = [];
+
+  for (let i = 0; i < coords.length; i += MAX_PER_REQ - 1) {
+    const chunk = coords.slice(i, i + MAX_PER_REQ);
+    if (chunk.length < 2) {
+      results.push(...chunk);
+      continue;
+    }
+    const coordStr = chunk.map((c) => c[1] + "," + c[0]).join(";");
+    const radiuses = chunk.map(() => "25").join(";");
+    try {
+      const resp = await fetch(
+        OSRM_URL +
+          coordStr +
+          "?overview=full&geometries=geojson&radiuses=" +
+          radiuses,
+      );
+      const data = await resp.json();
+      if (data.code === "Ok" && data.matchings) {
+        for (const m of data.matchings) {
+          results.push(...m.geometry.coordinates.map((c) => [c[1], c[0]]));
+        }
+      } else {
+        results.push(...chunk);
+      }
+    } catch (e) {
+      results.push(...chunk);
+    }
+  }
+
+  snapCache[hash] = results;
+  return results;
+}
+
 let map,
   layers = {},
   heatLayer = null;
@@ -184,22 +238,35 @@ function renderMap(data) {
           .addTo(group);
       });
     } else {
-      // Path view: segmented path with increasing opacity
+      // Path view: draw raw path immediately, then snap to roads async
       if (coords.length > 1) {
-        const segSize = Math.max(1, Math.floor(coords.length / 5));
-        for (let s = 0; s < coords.length - 1; s += segSize) {
-          const seg = coords.slice(s, Math.min(s + segSize + 1, coords.length));
-          const opacity = 0.2 + 0.6 * (s / coords.length);
-          if (seg.length > 1) {
-            L.polyline(seg, {
-              color: color,
-              weight: 3.5,
-              opacity: opacity,
-              smoothFactor: 1.5,
-              lineCap: "round",
-              lineJoin: "round",
-            }).addTo(group);
-          }
+        const rawLine = L.polyline(coords, {
+          color: color,
+          weight: 3,
+          opacity: 0.25,
+          smoothFactor: 1.5,
+          lineCap: "round",
+          lineJoin: "round",
+          dashArray: "4 6",
+        }).addTo(group);
+
+        const si = currentSpeedInfo[person] || getSpeedInfo(points);
+        const isWalking = si.label === "Stationary" || si.label === "Walking";
+
+        if (!isWalking && coords.length >= 3) {
+          snapToRoads(coords).then((snapped) => {
+            if (snapped && snapped.length > 1) {
+              group.removeLayer(rawLine);
+              L.polyline(snapped, {
+                color: color,
+                weight: 4,
+                opacity: 0.7,
+                smoothFactor: 1,
+                lineCap: "round",
+                lineJoin: "round",
+              }).addTo(group);
+            }
+          });
         }
       }
 
