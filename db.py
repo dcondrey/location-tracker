@@ -6,7 +6,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MIGRATIONS = {
     0: """
@@ -76,6 +76,60 @@ MIGRATIONS = {
             last_updated TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_speed_zones_geo ON speed_zones(lat, lon);
+    """,
+    3: """
+        CREATE TABLE IF NOT EXISTS geofences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person TEXT NOT NULL,
+            label TEXT NOT NULL,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            radius_m REAL NOT NULL DEFAULT 200,
+            on_enter INTEGER NOT NULL DEFAULT 1,
+            on_exit INTEGER NOT NULL DEFAULT 1,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_geofences_person ON geofences(person);
+
+        CREATE TABLE IF NOT EXISTS geofence_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            geofence_id INTEGER NOT NULL REFERENCES geofences(id),
+            person TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            acknowledged INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_gf_events_ts ON geofence_events(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_gf_events_ack ON geofence_events(acknowledged);
+
+        CREATE TABLE IF NOT EXISTS route_corridors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person TEXT NOT NULL,
+            from_place_id INTEGER REFERENCES known_places(id),
+            to_place_id INTEGER REFERENCES known_places(id),
+            trip_count INTEGER NOT NULL DEFAULT 0,
+            avg_duration_seconds REAL,
+            avg_distance_m REAL,
+            last_occurred TEXT,
+            UNIQUE(person, from_place_id, to_place_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_routes_person ON route_corridors(person);
+
+        CREATE TABLE IF NOT EXISTS route_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            corridor_id INTEGER NOT NULL REFERENCES route_corridors(id),
+            departed_at TEXT NOT NULL,
+            arrived_at TEXT NOT NULL,
+            duration_seconds REAL NOT NULL,
+            distance_m REAL,
+            day_of_week INTEGER,
+            hour_of_day INTEGER,
+            speed_profile TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_robs_corridor ON route_observations(corridor_id);
     """,
 }
 
@@ -209,6 +263,46 @@ class LocationDB:
             self.conn.execute("VACUUM")
             log.info("Purged %d records older than %d days.", count, days)
         return count
+
+    def add_geofence(self, person, label, latitude, longitude, radius_m=200, on_enter=True, on_exit=True):
+        self.conn.execute(
+            "INSERT INTO geofences "
+            "(person, label, latitude, longitude, radius_m, on_enter, on_exit, active, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
+            (person, label, latitude, longitude, radius_m, int(on_enter), int(on_exit), datetime.now(UTC).isoformat()),
+        )
+        self.conn.commit()
+        return self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    def get_geofences(self, person=None):
+        if person:
+            rows = self.conn.execute("SELECT * FROM geofences WHERE person=? AND active=1", (person,)).fetchall()
+        else:
+            rows = self.conn.execute("SELECT * FROM geofences WHERE active=1").fetchall()
+        return [dict(r) for r in rows]
+
+    def remove_geofence(self, geofence_id):
+        self.conn.execute("UPDATE geofences SET active=0 WHERE id=?", (geofence_id,))
+        self.conn.commit()
+
+    def record_geofence_event(self, geofence_id, person, event_type, timestamp, latitude, longitude):
+        self.conn.execute(
+            "INSERT INTO geofence_events (geofence_id, person, event_type, timestamp, latitude, longitude) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (geofence_id, person, event_type, timestamp, latitude, longitude),
+        )
+        self.conn.commit()
+
+    def get_geofence_events(self, unacknowledged_only=False, limit=50):
+        query = "SELECT e.*, g.label FROM geofence_events e JOIN geofences g ON e.geofence_id=g.id"
+        if unacknowledged_only:
+            query += " WHERE e.acknowledged=0"
+        query += " ORDER BY e.timestamp DESC LIMIT ?"
+        return [dict(r) for r in self.conn.execute(query, (limit,)).fetchall()]
+
+    def acknowledge_geofence_events(self):
+        self.conn.execute("UPDATE geofence_events SET acknowledged=1 WHERE acknowledged=0")
+        self.conn.commit()
 
     def close(self):
         self.conn.close()

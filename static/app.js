@@ -21,7 +21,6 @@ function showToast(msg, type) {
   document.getElementById("toast-container").appendChild(el);
   setTimeout(() => el.remove(), 3200);
 }
-const OSRM_URL = "https://router.project-osrm.org/match/v1/driving/";
 const snapCache = {};
 
 function coordsHash(coords) {
@@ -40,38 +39,23 @@ async function snapToRoads(coords) {
   const hash = coordsHash(coords);
   if (snapCache[hash]) return snapCache[hash];
 
-  const MAX_PER_REQ = 100;
-  const results = [];
-
-  for (let i = 0; i < coords.length; i += MAX_PER_REQ - 1) {
-    const chunk = coords.slice(i, i + MAX_PER_REQ);
-    if (chunk.length < 2) {
-      results.push(...chunk);
-      continue;
+  try {
+    const resp = await fetch("/api/snap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coords: coords }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await resp.json();
+    if (data.coords && data.coords.length >= 2) {
+      snapCache[hash] = data.coords;
+      return data.coords;
     }
-    const coordStr = chunk.map((c) => c[1] + "," + c[0]).join(";");
-    const radiuses = chunk.map(() => "25").join(";");
-    try {
-      const resp = await fetch(
-        OSRM_URL +
-          coordStr +
-          "?overview=full&geometries=geojson&radiuses=" +
-          radiuses,
-      );
-      const data = await resp.json();
-      if (data.code === "Ok" && data.matchings) {
-        for (const m of data.matchings) {
-          results.push(...m.geometry.coordinates.map((c) => [c[1], c[0]]));
-        }
-      } else {
-        results.push(...chunk);
-      }
-    } catch (e) {
-      results.push(...chunk);
-    }
+  } catch (e) {
+    console.warn("Road snap failed:", e.message);
   }
 
-  snapCache[hash] = results;
+  snapCache[hash] = coords;
   return results;
 }
 

@@ -306,6 +306,135 @@ class Intelligence:
             if speeds[i - 1] > 30 and speeds[i] < 15:
                 self.record_speed_zone(points[i]["latitude"], points[i]["longitude"], speeds[i])
 
+    def check_geofences(self, db, person, lat, lon, timestamp, person_fence_state):
+        """Check all active geofences for a person. Returns list of triggered events."""
+        fences = db.get_geofences(person)
+        events = []
+        for fence in fences:
+            dist = _haversine_m(lat, lon, fence["latitude"], fence["longitude"])
+            inside = dist <= fence["radius_m"]
+            prev_inside = person_fence_state.get(fence["id"])
+
+            if prev_inside is not None and prev_inside != inside:
+                event_type = "enter" if inside else "exit"
+                if (event_type == "enter" and fence["on_enter"]) or (event_type == "exit" and fence["on_exit"]):
+                    db.record_geofence_event(fence["id"], person, event_type, timestamp, lat, lon)
+                    events.append({"fence": fence["label"], "type": event_type, "person": person})
+                    log.info("Geofence %s: %s %s %s", event_type, person, fence["label"], timestamp)
+
+            person_fence_state[fence["id"]] = inside
+        return events
+
+    def record_route(self, person, from_place_id, to_place_id, departed_at, arrived_at, points):
+        """Record a completed trip between two known places."""
+        try:
+            t1 = datetime.fromisoformat(departed_at)
+            t2 = datetime.fromisoformat(arrived_at)
+            duration = (t2 - t1).total_seconds()
+        except (ValueError, TypeError):
+            return
+
+        total_dist = 0
+        speeds = []
+        for i in range(1, len(points)):
+            d = _haversine_m(
+                points[i - 1]["latitude"],
+                points[i - 1]["longitude"],
+                points[i]["latitude"],
+                points[i]["longitude"],
+            )
+            total_dist += d
+            try:
+                pt1 = datetime.fromisoformat(points[i - 1]["timestamp"])
+                pt2 = datetime.fromisoformat(points[i]["timestamp"])
+                dt = (pt2 - pt1).total_seconds()
+                speeds.append(round((d / dt * 3.6) if dt > 0 else 0, 1))
+            except (ValueError, TypeError):
+                speeds.append(0)
+
+        now = datetime.now(UTC).isoformat()
+        dow = t1.weekday()
+        hour = t1.hour
+
+        row = self.conn.execute(
+            "SELECT id, trip_count, avg_duration_seconds, avg_distance_m FROM route_corridors "
+            "WHERE person=? AND from_place_id=? AND to_place_id=?",
+            (person, from_place_id, to_place_id),
+        ).fetchone()
+
+        if row:
+            cid = row["id"]
+            n = row["trip_count"]
+            new_dur = (row["avg_duration_seconds"] * n + duration) / (n + 1)
+            new_dist = ((row["avg_distance_m"] or 0) * n + total_dist) / (n + 1)
+            self.conn.execute(
+                "UPDATE route_corridors SET trip_count=?, avg_duration_seconds=?, "
+                "avg_distance_m=?, last_occurred=? WHERE id=?",
+                (n + 1, new_dur, new_dist, now, cid),
+            )
+        else:
+            self.conn.execute(
+                "INSERT INTO route_corridors "
+                "(person, from_place_id, to_place_id, trip_count, "
+                "avg_duration_seconds, avg_distance_m, last_occurred) "
+                "VALUES (?, ?, ?, 1, ?, ?, ?)",
+                (person, from_place_id, to_place_id, duration, total_dist, now),
+            )
+            cid = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        import json as _json
+
+        self.conn.execute(
+            "INSERT INTO route_observations "
+            "(corridor_id, departed_at, arrived_at, duration_seconds, "
+            "distance_m, day_of_week, hour_of_day, speed_profile) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (cid, departed_at, arrived_at, duration, total_dist, dow, hour, _json.dumps(speeds[-20:])),
+        )
+        self.conn.commit()
+
+    def predict_route_duration(self, person, from_place_id, to_place_id, day_of_week, hour):
+        """Predict trip duration for a known route using time-of-day weighted history."""
+        rows = self.conn.execute(
+            "SELECT ro.duration_seconds, ro.arrived_at FROM route_observations ro "
+            "JOIN route_corridors rc ON ro.corridor_id=rc.id "
+            "WHERE rc.person=? AND rc.from_place_id=? AND rc.to_place_id=? "
+            "ORDER BY ro.arrived_at DESC LIMIT 20",
+            (person, from_place_id, to_place_id),
+        ).fetchall()
+
+        if len(rows) < MIN_OBSERVATIONS:
+            return None
+
+        weighted = []
+        for r in rows:
+            w = _recency_weight(r["arrived_at"])
+            weighted.append((r["duration_seconds"], w))
+
+        total_w = sum(w for _, w in weighted)
+        if total_w == 0:
+            return None
+        return sum(d * w for d, w in weighted) / total_w
+
+    def get_likely_destination(self, person, from_place_id):
+        """Predict most likely destination when departing from a place."""
+        rows = self.conn.execute(
+            "SELECT to_place_id, trip_count, last_occurred FROM route_corridors "
+            "WHERE person=? AND from_place_id=? ORDER BY trip_count DESC LIMIT 5",
+            (person, from_place_id),
+        ).fetchall()
+
+        if not rows:
+            return None
+
+        best, best_score = None, 0
+        for r in rows:
+            score = r["trip_count"] * _recency_weight(r["last_occurred"])
+            if score > best_score:
+                best_score = score
+                best = r["to_place_id"]
+        return best
+
     def decay_old_observations(self):
         cutoff = (datetime.now(UTC) - timedelta(days=OBSERVATION_RETENTION_DAYS)).isoformat()
         self.conn.execute("DELETE FROM dwell_observations WHERE departed_at < ?", (cutoff,))

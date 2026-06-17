@@ -490,6 +490,19 @@ def cli():
     purge_parser = subparsers.add_parser("purge", help="Delete old location data")
     purge_parser.add_argument("days", type=int, help="Delete records older than N days")
 
+    fence_parser = subparsers.add_parser("geofence", help="Manage geofences")
+    fence_sub = fence_parser.add_subparsers(dest="fence_command")
+    fence_add = fence_sub.add_parser("add", help="Add a geofence")
+    fence_add.add_argument("person", help="Person to monitor")
+    fence_add.add_argument("label", help="Name for this geofence (e.g. Home, Work)")
+    fence_add.add_argument("lat", type=float, help="Latitude")
+    fence_add.add_argument("lon", type=float, help="Longitude")
+    fence_add.add_argument("--radius", type=float, default=200, help="Radius in meters (default: 200)")
+    fence_sub.add_parser("list", help="List active geofences")
+    fence_rm = fence_sub.add_parser("remove", help="Remove a geofence")
+    fence_rm.add_argument("id", type=int, help="Geofence ID to remove")
+    fence_sub.add_parser("events", help="Show recent geofence events")
+
     subparsers.add_parser("_serve", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
@@ -600,6 +613,41 @@ def cli():
         db = LocationDB(DATA_FILE)
         count = db.purge_older_than(args.days)
         log.info("Purged %d records older than %d days.", count, args.days)
+        db.close()
+    elif args.command == "geofence":
+        from db import LocationDB
+
+        db = LocationDB(DATA_FILE)
+        if args.fence_command == "add":
+            gid = db.add_geofence(args.person, args.label, args.lat, args.lon, radius_m=args.radius)
+            log.info("Geofence #%d created: %s at (%.4f, %.4f) r=%dm", gid, args.label, args.lat, args.lon, args.radius)
+        elif args.fence_command == "list":
+            fences = db.get_geofences()
+            if not fences:
+                log.info("No active geofences.")
+            for f in fences:
+                log.info(
+                    "  #%d %s: %s (%.4f, %.4f) r=%dm enter=%s exit=%s",
+                    f["id"],
+                    f["person"],
+                    f["label"],
+                    f["latitude"],
+                    f["longitude"],
+                    f["radius_m"],
+                    "yes" if f["on_enter"] else "no",
+                    "yes" if f["on_exit"] else "no",
+                )
+        elif args.fence_command == "remove":
+            db.remove_geofence(args.id)
+            log.info("Geofence #%d removed.", args.id)
+        elif args.fence_command == "events":
+            events = db.get_geofence_events(limit=20)
+            if not events:
+                log.info("No geofence events.")
+            for e in events:
+                log.info("  %s | %s %s %s", e["timestamp"][:19], e["person"], e["event_type"], e["label"])
+        else:
+            log.info("Usage: location-tracker geofence {add,list,remove,events}")
         db.close()
     elif args.command == "_serve":
         _serve()

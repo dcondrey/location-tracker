@@ -226,6 +226,16 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
 
                         if prev_place is None and at_place:
                             intel.record_arrival(person, at_place["id"], latest["timestamp"])
+                            if prev.get("departed_from") and prev.get("departed_at"):
+                                trip_locs = tracker.db.get_locations(person=person, since=prev["departed_at"])
+                                intel.record_route(
+                                    person,
+                                    prev["departed_from"],
+                                    at_place["id"],
+                                    prev["departed_at"],
+                                    latest["timestamp"],
+                                    trip_locs,
+                                )
                         elif prev_place is not None and not at_place:
                             intel.record_departure(person, prev_place, latest["timestamp"])
                         elif prev_place is None and not at_place and m["stationary_seconds"] > 300:
@@ -235,7 +245,26 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
                             at_place = {"id": new_id, "radius": 75}
                             intel.record_arrival(person, new_id, latest["timestamp"])
 
-                        person_states[person] = {"place_id": at_place["id"] if at_place else None}
+                        person_states[person] = {
+                            "place_id": at_place["id"] if at_place else None,
+                            "departed_from": prev_place if (prev_place and not at_place) else prev.get("departed_from"),
+                            "departed_at": latest["timestamp"]
+                            if (prev_place and not at_place)
+                            else prev.get("departed_at"),
+                        }
+
+                        # Geofence checking
+                        fence_key = f"fences_{person}"
+                        if fence_key not in person_states:
+                            person_states[fence_key] = {}
+                        intel.check_geofences(
+                            tracker.db,
+                            person,
+                            latest["latitude"],
+                            latest["longitude"],
+                            latest["timestamp"],
+                            person_states[fence_key],
+                        )
 
                         # Speed zone learning on deceleration
                         if m["trend"] == "decelerating" and m["speed_kmh"] < 15 and m.get("avg_speed_kmh", 0) > 20:
@@ -360,6 +389,55 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
     @app.route("/api/v1/health")
     def api_health():
         return jsonify(tracker.db.get_health())
+
+    @app.route("/api/snap", methods=["POST"])
+    @app.route("/api/v1/snap", methods=["POST"])
+    def api_snap():
+        data = request.get_json()
+        if not data or "coords" not in data:
+            return jsonify({"error": "missing coords"}), 400
+        try:
+            from road_snap import get_snapper
+
+            snapped = get_snapper().snap_trace(data["coords"])
+            return jsonify({"coords": snapped})
+        except Exception as e:
+            return jsonify({"coords": data["coords"], "error": str(e)})
+
+    @app.route("/api/geofences")
+    @app.route("/api/v1/geofences")
+    def api_geofences():
+        person = request.args.get("person")
+        return jsonify(tracker.db.get_geofences(person))
+
+    @app.route("/api/geofences", methods=["POST"])
+    @app.route("/api/v1/geofences", methods=["POST"])
+    def api_add_geofence():
+        data = request.get_json()
+        if not data or not all(k in data for k in ("person", "label", "latitude", "longitude")):
+            return jsonify({"error": "missing fields"}), 400
+        gid = tracker.db.add_geofence(
+            data["person"],
+            data["label"],
+            float(data["latitude"]),
+            float(data["longitude"]),
+            radius_m=float(data.get("radius_m", 200)),
+            on_enter=data.get("on_enter", True),
+            on_exit=data.get("on_exit", True),
+        )
+        return jsonify({"ok": True, "id": gid})
+
+    @app.route("/api/geofence-events")
+    @app.route("/api/v1/geofence-events")
+    def api_geofence_events():
+        unack = request.args.get("unacknowledged", "false") == "true"
+        return jsonify(tracker.db.get_geofence_events(unacknowledged_only=unack))
+
+    @app.route("/api/geofence-events/acknowledge", methods=["POST"])
+    @app.route("/api/v1/geofence-events/acknowledge", methods=["POST"])
+    def api_ack_geofence_events():
+        tracker.db.acknowledge_geofence_events()
+        return jsonify({"ok": True})
 
     @app.route("/api/export")
     @app.route("/api/v1/export")
