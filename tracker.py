@@ -4,9 +4,6 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import folium
-import pandas as pd
-
 from db import LocationDB
 from providers import GoogleLocationProvider, ProviderAuthError, ProviderError
 
@@ -102,6 +99,8 @@ class LocationTracker:
             and total_points == self._stats_cache_points
         ):
             return self._stats_cache
+
+        import pandas as pd
 
         stats = {}
         for person, locations in self.history.items():
@@ -205,6 +204,9 @@ class LocationTracker:
             log.warning("No location data available yet.")
             return None
 
+        import folium
+        import pandas as pd
+
         df = pd.DataFrame(all_locations)
         df["timestamp"] = pd.to_datetime(df["timestamp"])
 
@@ -307,6 +309,8 @@ class LocationTracker:
         return output_file
 
     def _add_legend(self, m, color_map):
+        import folium
+
         people_items = "".join(
             f'<div style="display:flex;align-items:center;margin-bottom:5px;">'
             f'<div style="width:12px;height:12px;background:{c};border-radius:50%;margin-right:8px;border:2px solid white;"></div>'

@@ -253,18 +253,6 @@ def _setup():
     # Step 5: Start tracker and open browser
     log.info("[4/4] Starting tracker...")
     _start()
-    import time
-    import urllib.request
-
-    log.info("  Waiting for dashboard...")
-    for _ in range(10):
-        time.sleep(0.5)
-        try:
-            urllib.request.urlopen(f"http://localhost:{PORT}/", timeout=1)  # noqa: S310
-            break
-        except Exception:  # noqa: S110
-            pass
-
     webbrowser.open(CUSTOM_URL)
     log.info("")
     log.info("--- Setup Complete ---")
