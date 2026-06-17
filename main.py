@@ -144,9 +144,8 @@ def _start():
     migrate_plaintext_to_encrypted()
     _kill_port_holder()
 
-    if IS_MACOS:
-        if not _dns_is_configured():
-            _dns_add()
+    if IS_MACOS and not _dns_is_configured():
+        _dns_add()
         _pf_setup()
 
     log_path = APP_DIR / "tracker.log"
@@ -222,8 +221,18 @@ def _setup():
     log.info("  Email: %s", config["email"])
     log.info("")
 
-    # Step 2: Install Chromium
-    log.info("[1/4] Installing Chromium browser...")
+    # Step 2: Configure DNS + port forwarding (sudo needed, do it early)
+    if IS_MACOS:
+        log.info("[1/4] Configuring hostname and port forwarding...")
+        _dns_add()
+        _pf_setup()
+        log.info("")
+    else:
+        log.info("[1/4] Skipping DNS/pf (not macOS).")
+        log.info("")
+
+    # Step 3: Install Chromium
+    log.info("[2/4] Installing Chromium browser...")
     result = subprocess.run(
         [sys.executable, "-m", "playwright", "install", "chromium"],
     )
@@ -231,11 +240,6 @@ def _setup():
         log.error("Failed to install Chromium. Check your internet connection.")
         return
     log.info("  Chromium installed.")
-    log.info("")
-
-    # Step 3: Configure DNS
-    log.info("[2/4] Configuring custom hostname '%s'...", HOSTNAME)
-    _dns_add()
     log.info("")
 
     # Step 4: Authenticate
