@@ -536,13 +536,20 @@ async function loadPollStatus() {
     const el = document.getElementById("poll-status");
     const mins = Math.round(data.current_interval / 60);
     const reasonMap = {
-      stationary: "not moving",
-      slow: "walking",
-      moderate: "driving",
-      fast: "highway",
+      "long stationary": "not moving",
+      stationary: "settled",
+      "recently stopped": "recently stopped",
+      "just stopped": "just stopped",
+      walking: "walking",
+      driving: "driving",
+      highway: "highway",
+      departing: "departing",
+      arriving: "arriving",
     };
     const reason = reasonMap[data.speed_category] || data.speed_category;
-    el.innerHTML = `Polling every <span class="highlight">${mins} min</span> &middot; ${reason}`;
+    const secs = data.current_interval;
+    const label = secs >= 60 ? Math.round(secs / 60) + " min" : secs + "s";
+    el.innerHTML = `Polling every <span class="highlight">${label}</span> &middot; ${reason}`;
   } catch (e) {
     console.warn(e);
   }

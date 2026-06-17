@@ -17,95 +17,149 @@ _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
-def _compute_speed_kmh(history):
-    """Compute recent speed in km/h from the last few data points across all people."""
+def _haversine_m(lat1, lon1, lat2, lon2):
+    """Distance in meters between two lat/lon points."""
     import math
 
-    best_speed = 0.0
-    for person, locations in history.items():
-        if person == "Me" or len(locations) < 2:
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 6371000 * 2 * math.asin(math.sqrt(a))
+
+
+def _analyze_movement(points):
+    """Analyze recent movement for a person. Returns dict with speed, trend, stationary_seconds."""
+    if not points or len(points) < 2:
+        return {"speed_kmh": 0, "trend": "none", "stationary_seconds": float("inf")}
+
+    recent = points[-10:]
+    speeds = []
+    for i in range(1, len(recent)):
+        prev, curr = recent[i - 1], recent[i]
+        dist = _haversine_m(prev["latitude"], prev["longitude"], curr["latitude"], curr["longitude"])
+        try:
+            t1 = datetime.fromisoformat(prev["timestamp"])
+            t2 = datetime.fromisoformat(curr["timestamp"])
+        except (ValueError, TypeError):
             continue
-        recent = locations[-5:]
-        for i in range(1, len(recent)):
-            prev, curr = recent[i - 1], recent[i]
-            lat1, lon1 = math.radians(prev["latitude"]), math.radians(prev["longitude"])
-            lat2, lon2 = math.radians(curr["latitude"]), math.radians(curr["longitude"])
-            dlat, dlon = lat2 - lat1, lon2 - lon1
-            a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-            dist_m = 6371000 * 2 * math.asin(math.sqrt(a))
+        dt = (t2 - t1).total_seconds()
+        if dt > 0:
+            speeds.append((dist / dt) * 3.6)
+
+    if not speeds:
+        return {"speed_kmh": 0, "trend": "none", "stationary_seconds": float("inf")}
+
+    current_speed = speeds[-1]
+    avg_speed = sum(speeds) / len(speeds)
+
+    # Detect trend: accelerating, decelerating, or steady
+    if len(speeds) >= 3:
+        first_half = sum(speeds[: len(speeds) // 2]) / max(len(speeds) // 2, 1)
+        second_half = sum(speeds[len(speeds) // 2 :]) / max(len(speeds) - len(speeds) // 2, 1)
+        if second_half > first_half * 1.5:
+            trend = "accelerating"
+        elif second_half < first_half * 0.5:
+            trend = "decelerating"
+        else:
+            trend = "steady"
+    else:
+        trend = "steady"
+
+    # Calculate how long stationary (consecutive points within 25m)
+    stationary_seconds = 0
+    if current_speed < 1:
+        for i in range(len(recent) - 1, 0, -1):
+            dist = _haversine_m(
+                recent[i]["latitude"],
+                recent[i]["longitude"],
+                recent[i - 1]["latitude"],
+                recent[i - 1]["longitude"],
+            )
+            if dist > 25:
+                break
             try:
-                t1 = datetime.fromisoformat(prev["timestamp"])
-                t2 = datetime.fromisoformat(curr["timestamp"])
+                t1 = datetime.fromisoformat(recent[i - 1]["timestamp"])
+                t2 = datetime.fromisoformat(recent[i]["timestamp"])
+                stationary_seconds += (t2 - t1).total_seconds()
             except (ValueError, TypeError):
-                continue
-            dt = (t2 - t1).total_seconds()
-            if dt > 0:
-                speed = (dist_m / dt) * 3.6
-                best_speed = max(best_speed, speed)
-    return best_speed
+                break
+
+    return {
+        "speed_kmh": round(current_speed, 1),
+        "avg_speed_kmh": round(avg_speed, 1),
+        "trend": trend,
+        "stationary_seconds": stationary_seconds,
+    }
 
 
 def _speed_info_for_points(points):
     """Compute speed info for a person's location points."""
-    import math
-
-    if not points or len(points) < 2:
-        return {"speed_kmh": 0, "label": "Stationary", "cls": "badge-stationary"}
-    prev, last = points[-2], points[-1]
-    lat1, lon1 = math.radians(prev["latitude"]), math.radians(prev["longitude"])
-    lat2, lon2 = math.radians(last["latitude"]), math.radians(last["longitude"])
-    dlat, dlon = lat2 - lat1, lon2 - lon1
-    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    dist_m = 6371000 * 2 * math.asin(math.sqrt(a))
-    try:
-        t1 = datetime.fromisoformat(prev["timestamp"])
-        t2 = datetime.fromisoformat(last["timestamp"])
-    except (ValueError, TypeError):
-        return {"speed_kmh": 0, "label": "Stationary", "cls": "badge-stationary"}
-    dt = (t2 - t1).total_seconds()
-    if dt <= 0:
-        return {"speed_kmh": 0, "label": "Stationary", "cls": "badge-stationary"}
-    kmh = (dist_m / dt) * 3.6
+    m = _analyze_movement(points)
+    kmh = m["speed_kmh"]
     if kmh < 1:
-        return {"speed_kmh": round(kmh, 1), "label": "Stationary", "cls": "badge-stationary"}
+        return {"speed_kmh": kmh, "label": "Stationary", "cls": "badge-stationary"}
     if kmh < 10:
-        return {"speed_kmh": round(kmh, 1), "label": "Walking", "cls": "badge-slow"}
+        return {"speed_kmh": kmh, "label": "Walking", "cls": "badge-slow"}
     if kmh < 60:
-        return {"speed_kmh": round(kmh, 1), "label": "Driving", "cls": "badge-moving"}
-    return {"speed_kmh": round(kmh, 1), "label": "Highway", "cls": "badge-fast"}
+        return {"speed_kmh": kmh, "label": "Driving", "cls": "badge-moving"}
+    return {"speed_kmh": kmh, "label": "Highway", "cls": "badge-fast"}
 
 
 def _adaptive_interval(history, default_interval):
-    """Return (interval_seconds, speed_category) based on movement speed.
+    """Compute poll interval based on movement analysis across all tracked people.
 
-    Polls aggressively during movement for accurate path tracking:
-    - Stationary (< 1 km/h for 5+ min): 600s (10 min)
-    - Slow (1-10 km/h, e.g. walking): 60s (1 min)
-    - Moderate (10-60 km/h, e.g. city driving): 30s
-    - Fast (> 60 km/h, e.g. highway): 15s
+    Uses speed, acceleration trend, and stationary duration to determine
+    how often to poll. Polls aggressively when movement is detected or
+    starting, and backs off progressively when stationary.
+
+    Interval curve:
+    - Just started moving (accelerating):  10s  (catch departure)
+    - Highway (>60 km/h):                  15s  (fast but stable)
+    - Driving (10-60 km/h):                30s  (city detail)
+    - Walking (1-10 km/h):                 45s  (pedestrian detail)
+    - Decelerating (<10 km/h, slowing):    20s  (catch arrival)
+    - Just stopped (<2 min stationary):    30s  (might resume)
+    - Recently stopped (2-10 min):        120s  (probably parked)
+    - Stationary (10-30 min):             300s  (settled in)
+    - Long stationary (>30 min):          600s  (not going anywhere)
     """
-    speed = _compute_speed_kmh(history)
-    if speed >= 60:
-        return 15, "fast"
-    elif speed >= 10:
-        return 30, "moderate"
-    elif speed >= 1:
-        return 60, "slow"
-    else:
-        # Check if stationary for 5+ minutes
-        for person, locations in history.items():
-            if person == "Me" or len(locations) < 2:
-                continue
-            last = locations[-1]
-            second_last = locations[-2]
-            try:
-                t1 = datetime.fromisoformat(second_last["timestamp"])
-                t2 = datetime.fromisoformat(last["timestamp"])
-            except (ValueError, TypeError):
-                continue
-            if (t2 - t1).total_seconds() >= 300:
-                return 600, "stationary"
-        return default_interval, "stationary"
+    best_interval = 600
+    best_category = "long stationary"
+
+    for person, locations in history.items():
+        if person == "Me":
+            continue
+        m = _analyze_movement(locations)
+        speed = m["speed_kmh"]
+        trend = m["trend"]
+        still_secs = m["stationary_seconds"]
+
+        if speed >= 60:
+            interval, category = 15, "highway"
+        elif speed >= 10:
+            interval, category = 30, "driving"
+        elif speed >= 1:
+            if trend == "accelerating":
+                interval, category = 10, "departing"
+            elif trend == "decelerating":
+                interval, category = 20, "arriving"
+            else:
+                interval, category = 45, "walking"
+        else:
+            if still_secs < 120:
+                interval, category = 30, "just stopped"
+            elif still_secs < 600:
+                interval, category = 120, "recently stopped"
+            elif still_secs < 1800:
+                interval, category = 300, "stationary"
+            else:
+                interval, category = 600, "long stationary"
+
+        if interval < best_interval:
+            best_interval = interval
+            best_category = category
+
+    return best_interval, best_category
 
 
 def run_dashboard(data_file, cookies_file, email, port, poll_interval):
