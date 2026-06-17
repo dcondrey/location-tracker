@@ -19,10 +19,12 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 IS_MACOS = sys.platform == "darwin"
 
 PID_FILE = APP_DIR / ".tracker.pid"
+PF_ANCHOR = "com.locationtracker"
+PF_ANCHOR_FILE = f"/etc/pf.anchors/{PF_ANCHOR}"
 
 DEFAULTS = {
     "email": "",
-    "port": 80,
+    "port": 7070,
     "poll_interval": 300,
     "hostname": "tracker.local",
     "data_file": str(APP_DIR / "location_history.db"),
@@ -142,8 +144,10 @@ def _start():
     migrate_plaintext_to_encrypted()
     _kill_port_holder()
 
-    if IS_MACOS and not _dns_is_configured():
-        _dns_add()
+    if IS_MACOS:
+        if not _dns_is_configured():
+            _dns_add()
+        _pf_setup()
 
     log_path = APP_DIR / "tracker.log"
     if log_path.exists() and log_path.stat().st_size > 10 * 1024 * 1024:
@@ -151,10 +155,6 @@ def _start():
 
     env = os.environ.copy()
     cmd = [sys.executable, __file__, "_serve"]
-    if PORT < 1024:
-        log.info("Port %d requires elevated privileges.", PORT)
-        subprocess.run(["sudo", "true"])
-        cmd = ["sudo", "-E", "--non-interactive"] + cmd
     proc = subprocess.Popen(
         cmd,
         env=env,
@@ -178,9 +178,6 @@ def _stop():
     try:
         os.kill(pid, signal.SIGTERM)
         log.info("Stopped (pid %d).", pid)
-    except PermissionError:
-        subprocess.run(["sudo", "kill", str(pid)])
-        log.info("Stopped (pid %d, via sudo).", pid)
     except OSError:
         log.info("Process already gone.")
     PID_FILE.unlink(missing_ok=True)
@@ -255,16 +252,14 @@ def _setup():
     import time
     import urllib.request
 
-    log.info("  Waiting for dashboard to start...")
-    for _ in range(15):
-        time.sleep(1)
+    log.info("  Waiting for dashboard...")
+    for _ in range(10):
+        time.sleep(0.5)
         try:
-            urllib.request.urlopen(f"http://localhost:{PORT}/", timeout=2)  # noqa: S310
+            urllib.request.urlopen(f"http://localhost:{PORT}/", timeout=1)  # noqa: S310
             break
         except Exception:  # noqa: S110
             pass
-    else:
-        log.warning("  Dashboard may still be starting. Check: %s", CUSTOM_URL)
 
     webbrowser.open(CUSTOM_URL)
     log.info("")
@@ -302,16 +297,58 @@ def _dns_add():
 
 
 def _dns_remove():
-    """Remove 'tracker' hostname from /etc/hosts."""
+    """Remove hostname from /etc/hosts."""
     log.info("Removing '%s' from /etc/hosts (requires sudo)...", HOSTNAME)
-    result = subprocess.run(
+    subprocess.run(
         ["sudo", "sed", "-i", "", f"/127.0.0.1.*{HOSTNAME}/d", "/etc/hosts"],
     )
-    if result.returncode == 0:
-        log.info("  Hostname removed.")
-    else:
-        log.error("  Failed to update /etc/hosts.")
+    log.info("  Hostname removed.")
 
+
+def _pf_is_configured():
+    """Check if pf port forwarding anchor is active."""
+    try:
+        return PF_ANCHOR in Path("/etc/pf.conf").read_text()
+    except (PermissionError, FileNotFoundError):
+        return False
+
+
+def _pf_setup():
+    """Set up pfctl to forward port 80 -> app port on loopback."""
+    if _pf_is_configured():
+        log.info("  Port forwarding already configured.")
+        subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
+        return
+
+    anchor_rule = f"rdr pass on lo0 inet proto tcp from any to 127.0.0.1 port 80 -> 127.0.0.1 port {PORT}\n"
+
+    log.info("  Setting up port forwarding (80 -> %d, requires sudo)...", PORT)
+    subprocess.run(
+        ["sudo", "tee", PF_ANCHOR_FILE],
+        input=anchor_rule,
+        text=True,
+        capture_output=True,
+    )
+
+    rdr_line = f'rdr-anchor "{PF_ANCHOR}"'
+    load_line = f'load anchor "{PF_ANCHOR}" from "{PF_ANCHOR_FILE}"'
+    subprocess.run(
+        ["sudo", "tee", "-a", "/etc/pf.conf"],
+        input=rdr_line + "\n" + load_line + "\n",
+        text=True,
+        capture_output=True,
+    )
+
+    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
+    log.info("  Port forwarding configured (80 -> %d).", PORT)
+
+
+def _pf_remove():
+    """Remove pfctl port forwarding."""
+    log.info("Removing port forwarding (requires sudo)...")
+    subprocess.run(["sudo", "rm", "-f", PF_ANCHOR_FILE])
+    subprocess.run(["sudo", "sed", "-i", "", f"/{PF_ANCHOR}/d", "/etc/pf.conf"])
+    subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
     log.info("  Port forwarding removed.")
 
 
@@ -505,8 +542,10 @@ def cli():
         _uninstall_launchd()
     elif args.command == "dns":
         _dns_add()
+        _pf_setup()
     elif args.command == "dns-remove":
         _dns_remove()
+        _pf_remove()
     elif args.command == "map":
         from tracker import LocationTracker
 
