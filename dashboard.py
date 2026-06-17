@@ -501,5 +501,8 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
 
         return jsonify(history)
 
+    import werkzeug.serving
+
+    werkzeug.serving.WSGIRequestHandler.log = lambda *args, **kwargs: None
     log.info("Dashboard running at http://tracker.local (port %d)", port)
     app.run(host="127.0.0.1", port=port, debug=False)

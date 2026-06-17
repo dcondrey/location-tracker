@@ -331,6 +331,36 @@ def _pf_setup():
         )
 
     subprocess.run(["sudo", "pfctl", "-ef", "/etc/pf.conf"], capture_output=True)
+
+    # Install a LaunchDaemon so pf rules survive reboots
+    pf_plist = Path("/Library/LaunchDaemons/com.locationtracker.pf.plist")
+    if not pf_plist.exists():
+        pf_plist_content = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.locationtracker.pf</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/sbin/pfctl</string>
+        <string>-ef</string>
+        <string>/etc/pf.conf</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+"""
+        subprocess.run(
+            ["sudo", "tee", str(pf_plist)],
+            input=pf_plist_content,
+            text=True,
+            capture_output=True,
+        )
+        subprocess.run(["sudo", "launchctl", "load", str(pf_plist)], capture_output=True)
+        log.info("  Boot-persistent pf daemon installed.")
+
     log.info("  Port forwarding active (80 -> %d).", PORT)
 
 

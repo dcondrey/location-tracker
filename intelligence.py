@@ -44,9 +44,17 @@ def _bearing(lat1, lon1, lat2, lon2):
     return math.degrees(math.atan2(x, y)) % 360
 
 
+def _parse_ts(timestamp_str):
+    """Parse a timestamp string, ensuring it's timezone-aware."""
+    ts = datetime.fromisoformat(timestamp_str)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return ts
+
+
 def _recency_weight(timestamp_str):
     try:
-        ts = datetime.fromisoformat(timestamp_str)
+        ts = _parse_ts(timestamp_str)
         age_days = (datetime.now(UTC) - ts).total_seconds() / 86400
     except (ValueError, TypeError):
         return 0.5
@@ -105,8 +113,8 @@ class Intelligence:
             dwell = 0.0
             if departed_at:
                 try:
-                    t1 = datetime.fromisoformat(arrived_at)
-                    t2 = datetime.fromisoformat(departed_at)
+                    t1 = _parse_ts(arrived_at)
+                    t2 = _parse_ts(departed_at)
                     dwell = (t2 - t1).total_seconds()
                 except (ValueError, TypeError):
                     pass
@@ -130,7 +138,7 @@ class Intelligence:
 
     def record_arrival(self, person, place_id, arrived_at):
         try:
-            ts = datetime.fromisoformat(arrived_at)
+            ts = _parse_ts(arrived_at)
             dow = ts.weekday()
             hour = ts.hour
         except (ValueError, TypeError):
@@ -152,8 +160,8 @@ class Intelligence:
         if not row:
             return
         try:
-            t1 = datetime.fromisoformat(row["arrived_at"])
-            t2 = datetime.fromisoformat(departed_at)
+            t1 = _parse_ts(row["arrived_at"])
+            t2 = _parse_ts(departed_at)
             duration = (t2 - t1).total_seconds()
         except (ValueError, TypeError):
             duration = 0
@@ -222,7 +230,7 @@ class Intelligence:
         in_window = 0
         for r in rows:
             try:
-                dep = datetime.fromisoformat(r["departed_at"])
+                dep = _parse_ts(r["departed_at"])
                 dep_hour = dep.hour + dep.minute / 60.0
                 if window_start <= dep_hour <= window_end:
                     in_window += 1
@@ -294,8 +302,8 @@ class Intelligence:
                 points[i]["longitude"],
             )
             try:
-                t1 = datetime.fromisoformat(points[i - 1]["timestamp"])
-                t2 = datetime.fromisoformat(points[i]["timestamp"])
+                t1 = _parse_ts(points[i - 1]["timestamp"])
+                t2 = _parse_ts(points[i]["timestamp"])
                 dt = (t2 - t1).total_seconds()
             except (ValueError, TypeError):
                 speeds.append(0)
@@ -328,8 +336,8 @@ class Intelligence:
     def record_route(self, person, from_place_id, to_place_id, departed_at, arrived_at, points):
         """Record a completed trip between two known places."""
         try:
-            t1 = datetime.fromisoformat(departed_at)
-            t2 = datetime.fromisoformat(arrived_at)
+            t1 = _parse_ts(departed_at)
+            t2 = _parse_ts(arrived_at)
             duration = (t2 - t1).total_seconds()
         except (ValueError, TypeError):
             return
@@ -345,8 +353,8 @@ class Intelligence:
             )
             total_dist += d
             try:
-                pt1 = datetime.fromisoformat(points[i - 1]["timestamp"])
-                pt2 = datetime.fromisoformat(points[i]["timestamp"])
+                pt1 = _parse_ts(points[i - 1]["timestamp"])
+                pt2 = _parse_ts(points[i]["timestamp"])
                 dt = (pt2 - pt1).total_seconds()
                 speeds.append(round((d / dt * 3.6) if dt > 0 else 0, 1))
             except (ValueError, TypeError):
