@@ -58,6 +58,85 @@ uv sync
 uv run location-tracker setup
 ```
 
+### Docker
+
+Docker runs the tracker without installing Python on the host. The container includes Playwright Chromium. Cookie sign-in uses a temporary noVNC browser session, and the tracker stores its database and encrypted cookies in Docker volumes.
+
+1. Create `.env` in the project directory:
+
+```env
+LOCATION_TRACKER_EMAIL=you@gmail.com
+```
+
+Use the Google account that has access to Location Sharing.
+
+2. Build the image:
+
+```bash
+docker compose build
+```
+
+3. Capture Google cookies:
+
+```bash
+docker compose --profile cookies run --rm --service-ports cookies
+```
+
+Keep that terminal open. In your browser, open:
+
+```text
+http://localhost:6080/vnc.html
+```
+
+Click **Connect**. There is no VNC password. A Chromium window will open inside the noVNC desktop. Sign in to Google and let Google Maps load. The encrypted cookie file, browser profile, database, and Docker encryption key are stored in the `tracker-data` volume.
+
+After sign-in completes and Google Maps loads, close the Chromium window inside noVNC. The cookie command will then extract cookies from the saved browser profile and write the encrypted `cookies.enc` file. If the command exits successfully, authentication is ready.
+
+4. Start the tracker:
+
+```bash
+docker compose up -d
+```
+
+5. Open the dashboard:
+
+```text
+http://localhost:7070
+```
+
+Useful Docker commands:
+
+```bash
+docker compose logs -f tracker
+docker compose down
+docker compose --profile cookies run --rm --service-ports cookies
+```
+
+Run the `cookies` command again whenever Google cookies expire. If the tracker is already running, stop it first so the browser profile is not used by two processes at once:
+
+```bash
+docker compose stop tracker
+docker compose --profile cookies run --rm --service-ports cookies
+docker compose up -d tracker
+```
+
+Docker persistence:
+
+| Volume | Container path | Contents |
+|--------|----------------|----------|
+| `tracker-data` | `/home/location/.local/share/location-tracker` | SQLite database, encrypted cookies, browser profile, encryption key |
+| `tracker-config` | `/home/location/.config/location-tracker` | Tracker config |
+
+By default, Docker stores the Fernet cookie-encryption key at `/home/location/.local/share/location-tracker/cookie-encryption.key` inside `tracker-data`. To supply your own key instead, add `LOCATION_TRACKER_FERNET_KEY` to `.env`.
+
+To delete all Docker-stored tracker data and start over:
+
+```bash
+docker compose down -v
+```
+
+Docker users do not need Python, uv, macOS Keychain, or launchd on the host. Docker Desktop or Docker Engine with Compose is enough.
+
 ## Getting Started
 
 ```bash
