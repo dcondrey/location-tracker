@@ -6,27 +6,6 @@
 
 A self-hosted location tracking dashboard that polls Google Maps location sharing and visualizes movement history on an interactive map. Features intelligent learning-based polling, geofencing, road snapping, and route corridor prediction. Runs as a background daemon with a real-time web interface.
 
-![Dashboard - Path View](static/screenshot_01.jpg)
-
-## Features
-
-- **Intelligent adaptive polling** -- Distance-based spacing with learned behavior patterns; 4s when arriving, progressive backoff when stationary
-- **Interactive dashboard** -- Dark-themed Leaflet map with path visualization, heatmaps, stop detection, and timeline scrubbing
-- **Place learning** -- Automatically clusters frequent stops into known places, predicts dwell time and departure probability
-- **Geofencing** -- Define geographic boundaries with enter/exit event notifications
-- **Road snapping** -- Local coordinate-to-road snapping for cleaner path visualization
-- **Route corridors** -- Learns travel patterns between known places, predicts destinations and trip durations
-- **Self-tracking** -- Track your own position via browser geolocation (requires HTTPS or localhost)
-- **Encrypted cookie storage** -- Google auth tokens encrypted at rest with Fernet, key stored in macOS Keychain
-- **Auto cookie refresh** -- Headless browser automatically re-authenticates when cookies expire
-- **Battery-aware** -- Reduces poll frequency when the tracked device's battery is low
-- **SQLite storage** -- Location history stored in an indexed SQLite database with WAL mode
-- **Mobile responsive** -- Bottom-sheet sidebar on phones, touch-friendly controls
-- **Multiple export formats** -- JSON, CSV, and GeoJSON
-- **Persistent daemon** -- Optional launchd integration to survive reboots
-- **CLI query tools** -- Look up anyone's latest location or history from the terminal
-- **Provider-agnostic** -- Extensible provider architecture; currently supports Google Maps location sharing
-
 ## Screenshots
 
 | Path View | Terrain View |
@@ -83,7 +62,30 @@ The dashboard runs at **http://tracker.local**. Flask listens on port 7070; macO
 - **uv** package manager ([install](https://docs.astral.sh/uv/getting-started/installation/))
 - A Google account with [location sharing](https://support.google.com/maps/answer/7326816) enabled
 
-## Commands
+<details>
+<summary><strong>Features</strong> -- adaptive polling, geofencing, WiFi fingerprinting, dashboard, ML anomaly detection</summary>
+
+- **Intelligent adaptive polling** -- Distance-based spacing with learned behavior patterns; 4s when arriving, progressive backoff when stationary
+- **Interactive dashboard** -- Dark-themed Leaflet map with path visualization, heatmaps, stop detection, and timeline scrubbing
+- **Place learning** -- Automatically clusters frequent stops into known places, predicts dwell time and departure probability
+- **Geofencing** -- Define geographic boundaries with enter/exit event notifications
+- **Road snapping** -- Local coordinate-to-road snapping for cleaner path visualization
+- **Route corridors** -- Learns travel patterns between known places, predicts destinations and trip durations
+- **Self-tracking** -- Track your own position via browser geolocation (requires HTTPS or localhost)
+- **Encrypted cookie storage** -- Google auth tokens encrypted at rest with Fernet, key stored in macOS Keychain
+- **Auto cookie refresh** -- Headless browser automatically re-authenticates when cookies expire
+- **Battery-aware** -- Reduces poll frequency when the tracked device's battery is low
+- **SQLite storage** -- Location history stored in an indexed SQLite database with WAL mode
+- **Mobile responsive** -- Bottom-sheet sidebar on phones, touch-friendly controls
+- **Multiple export formats** -- JSON, CSV, and GeoJSON
+- **Persistent daemon** -- Optional launchd integration to survive reboots
+- **CLI query tools** -- Look up anyone's latest location or history from the terminal
+- **Provider-agnostic** -- Extensible provider architecture; currently supports Google Maps location sharing
+
+</details>
+
+<details>
+<summary><strong>Commands</strong> -- tracking, auth, config, service management, querying, geofencing</summary>
 
 ### Tracking
 
@@ -141,7 +143,10 @@ When cookies expire, the tracker automatically attempts a headless browser refre
 | `geofence remove <id>` | Remove a geofence by ID |
 | `geofence events` | Show recent geofence enter/exit events |
 
-## Dashboard
+</details>
+
+<details>
+<summary><strong>Dashboard</strong> -- map layers, visualization modes, timeline scrubber, export</summary>
 
 The web dashboard at `http://tracker.local` provides:
 
@@ -157,7 +162,10 @@ The web dashboard at `http://tracker.local` provides:
 - **Toast notifications** -- Visual feedback for all actions
 - **Mobile layout** -- Bottom-sheet sidebar on screens under 640px
 
-## How It Works
+</details>
+
+<details>
+<summary><strong>How It Works</strong> -- adaptive polling, intelligence engine, cookie lifecycle, security, data storage</summary>
 
 ### Intelligent Adaptive Polling
 
@@ -219,7 +227,31 @@ Location history is stored in a local SQLite database (`location_history.db`) wi
 
 Use `location-tracker purge <days>` to enforce a retention policy.
 
-## Project Structure
+</details>
+
+<details>
+<summary><strong>API Endpoints</strong> -- locations, stats, polling, export, geofences</summary>
+
+The dashboard exposes these local API endpoints (also available under `/api/v1/`):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/locations?days=7` | Location history with per-person speed info |
+| GET | `/api/stats` | Tracking statistics per person |
+| GET | `/api/poll-status` | Current polling interval, speed category, and error state |
+| GET | `/api/health` | Database health check and recent poll history |
+| GET | `/api/export?format=json` | Export all data (json, csv, geojson) |
+| POST | `/api/self-location` | Submit browser geolocation |
+| POST | `/api/snap` | Road-snap a coordinate trace |
+| GET | `/api/geofences?person=Name` | List geofences for a person |
+| POST | `/api/geofences` | Create a new geofence |
+| GET | `/api/geofence-events?person=Name` | List geofence enter/exit events |
+| POST | `/api/geofence-events/acknowledge` | Acknowledge all geofence events |
+
+</details>
+
+<details>
+<summary><strong>Project Structure</strong></summary>
 
 ```
 location-tracker/
@@ -246,25 +278,10 @@ location-tracker/
   build.sh           # PyInstaller standalone build
 ```
 
-## API Endpoints
+</details>
 
-The dashboard exposes these local API endpoints (also available under `/api/v1/`):
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/locations?days=7` | Location history with per-person speed info |
-| GET | `/api/stats` | Tracking statistics per person |
-| GET | `/api/poll-status` | Current polling interval, speed category, and error state |
-| GET | `/api/health` | Database health check and recent poll history |
-| GET | `/api/export?format=json` | Export all data (json, csv, geojson) |
-| POST | `/api/self-location` | Submit browser geolocation |
-| POST | `/api/snap` | Road-snap a coordinate trace |
-| GET | `/api/geofences?person=Name` | List geofences for a person |
-| POST | `/api/geofences` | Create a new geofence |
-| GET | `/api/geofence-events?person=Name` | List geofence enter/exit events |
-| POST | `/api/geofence-events/acknowledge` | Acknowledge all geofence events |
-
-## Data Directory
+<details>
+<summary><strong>Data Directory</strong></summary>
 
 All data is stored in `~/.local/share/location-tracker/`:
 
@@ -276,6 +293,8 @@ All data is stored in `~/.local/share/location-tracker/`:
 | `tracker.log` | Daemon log file (rotated at 10MB) |
 
 Config is stored in `~/.config/location-tracker/config.json`.
+
+</details>
 
 ## Troubleshooting
 
