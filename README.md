@@ -1,4 +1,8 @@
 # Location Tracker
+[![CI](https://github.com/dcondrey/location-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/dcondrey/location-tracker/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org)
+
 
 A self-hosted location tracking dashboard that polls Google Maps location sharing and visualizes movement history on an interactive map. Features intelligent learning-based polling, geofencing, road snapping, and route corridor prediction. Runs as a background daemon with a real-time web interface.
 
