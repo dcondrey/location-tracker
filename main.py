@@ -12,6 +12,17 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+class Colors:
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    CYAN = "\033[96m"
+    RESET = "\033[0m"
+
+
+def _color(text: str, color: str) -> str:
+    return f"{color}{text}{Colors.RESET}"
+
 APP_DIR = Path.home() / ".local" / "share" / "location-tracker"
 CONFIG_DIR = Path.home() / ".config" / "location-tracker"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -82,7 +93,7 @@ del _c
 def _get_email():
     config = _load_config()
     if not config["email"]:
-        log.error("No email configured.")
+        log.error(_color("No email configured.", Colors.RED))
         log.error("Set it with: location-tracker config --email you@gmail.com")
         log.error("Or set LOCATION_TRACKER_EMAIL environment variable.")
         sys.exit(1)
@@ -165,8 +176,8 @@ def _start():
         stderr=subprocess.STDOUT,
     )
     PID_FILE.write_text(str(proc.pid))
-    log.info("Started (pid %d).", proc.pid)
-    log.info("Dashboard: %s", CUSTOM_URL)
+    log.info(_color("Started (pid %d).", Colors.GREEN), proc.pid)
+    log.info(_color("Dashboard: %s", Colors.CYAN), CUSTOM_URL)
     log.info("Stop with: location-tracker off")
 
 
@@ -199,7 +210,7 @@ def _serve():
 
 def _status():
     if _is_running():
-        log.info("Running (pid %d). Dashboard: %s", _read_pid(), CUSTOM_URL)
+        log.info(  _color("Running (pid %d). Dashboard: %s", Colors.CYAN), _read_pid(), CUSTOM_URL,)
     else:
         log.info("Not running.")
 
@@ -240,7 +251,7 @@ def _setup():
         [sys.executable, "-m", "playwright", "install", "chromium"],
     )
     if result.returncode != 0:
-        log.error("Failed to install Chromium. Check your internet connection.")
+        log.error(_color("Failed to install Chromium. Check your internet connection.",Colors.RED,))
         return
     log.info("  Chromium installed.")
     log.info("")
@@ -269,8 +280,8 @@ def _setup():
         except Exception:
             log.warning("  Port 80 forwarding not active. Dashboard available at http://tracker.local:%d", PORT)
     except Exception:
-        log.warning("  Dashboard still starting. Check http://tracker.local:%d", PORT)
-
+        log.warning( _color(
+        "  Dashboard still starting. Check http://tracker.local:%d",Colors.YELLOW,), PORT,)
     webbrowser.open(CUSTOM_URL)
     log.info("")
     log.info("--- Setup Complete ---")
@@ -419,15 +430,15 @@ def _test_cookies():
         service = Service(cookies_file=tmp_path, authenticating_account=email)
         people = service.get_all_people()
         if people:
-            log.info("  Cookies are valid. Found %d shared contact(s):", len(people))
+            log.info( _color("  Cookies are valid. Found %d shared contact(s):", Colors.GREEN), len(people))
             for person in people:
                 name = person.full_name or person.nickname or "Unknown"
                 log.info("    - %s", name)
         else:
-            log.warning("  Cookies work but no shared contacts found.")
+            log.warning(_color("  Cookies work but no shared contacts found.", Colors.YELLOW))
             log.warning("  Ensure someone is sharing their location with %s", email)
     except Exception as e:
-        log.error("  Cookie validation failed: %s", e)
+        log.error(_color("  Cookie validation failed: %s", Colors.RED), e,)
         log.error("  Re-run: location-tracker cookies")
     finally:
         os.unlink(tmp_path)
