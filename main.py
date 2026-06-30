@@ -8,8 +8,8 @@ import signal
 import subprocess
 import sys
 from datetime import UTC
-from pathlib import Path
 from importlib.metadata import version
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -492,25 +492,25 @@ def cli():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     parser = argparse.ArgumentParser(
-    prog="location-tracker",
-    description="Track and visualize location. Use 'on' to start, 'off' to stop.",
-    epilog=(
-        "Examples:\n"
-        "  location-tracker config --email you@gmail.com\n"
-        "  location-tracker setup\n"
-        "  location-tracker cookies\n"
-        "  location-tracker on\n"
-        "  location-tracker map --days 7\n"
-        "  location-tracker install\n"
-    ),
-    formatter_class=argparse.RawDescriptionHelpFormatter,
-)
+        prog="location-tracker",
+        description="Track and visualize location. Use 'on' to start, 'off' to stop.",
+        epilog=(
+            "Examples:\n"
+            "  location-tracker config --email you@gmail.com\n"
+            "  location-tracker setup\n"
+            "  location-tracker cookies\n"
+            "  location-tracker on\n"
+            "  location-tracker map --days 7\n"
+            "  location-tracker install\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     parser.add_argument(
-    "--version",
-    action="version",
-    version=f"%(prog)s {version('location-tracker')}",
-)
+        "--version",
+        action="version",
+        version=f"%(prog)s {version('location-tracker')}",
+    )
 
     subparsers = parser.add_subparsers(dest="command")
 
