@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 from datetime import UTC
+from importlib.metadata import version
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -504,6 +505,13 @@ def cli():
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {version('location-tracker')}",
+    )
+
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("on", help="Start tracking and launch dashboard")
