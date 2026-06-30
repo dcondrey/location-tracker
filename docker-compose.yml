@@ -1,0 +1,52 @@
+x-common: &common
+  build: .
+  environment:
+    LOCATION_TRACKER_EMAIL: ${LOCATION_TRACKER_EMAIL:?Set LOCATION_TRACKER_EMAIL in .env}
+    LOCATION_TRACKER_PORT: "7070"
+    LOCATION_TRACKER_KEY_FILE: /home/location/.local/share/location-tracker/cookie-encryption.key
+    DISPLAY: :99
+  volumes:
+    - tracker-data:/home/location/.local/share/location-tracker
+    - tracker-config:/home/location/.config/location-tracker
+
+services:
+  tracker:
+    <<: *common
+    ports:
+      - "7070:7071"
+    command: >
+      sh -lc '
+        set -e
+        location-tracker _serve &
+        app_pid=$$!
+        until nc -z 127.0.0.1 7070; do
+          kill -0 "$$app_pid" 2>/dev/null || wait "$$app_pid"
+          sleep 1
+        done
+        exec socat TCP-LISTEN:7071,fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:7070
+      '
+
+  cookies:
+    <<: *common
+    profiles: ["cookies"]
+    ports:
+      - "6080:6080"
+    command: >
+      sh -lc '
+        set -e
+        Xvfb :99 -screen 0 1920x1080x24 >/tmp/xvfb.log 2>&1 &
+        fluxbox >/tmp/fluxbox.log 2>&1 &
+        x11vnc -display :99 -forever -shared -nopw -listen 0.0.0.0 -rfbport 5900 >/tmp/x11vnc.log 2>&1 &
+        websockify --web=/usr/share/novnc 0.0.0.0:6080 localhost:5900 >/tmp/novnc.log 2>&1 &
+        profile=/home/location/.local/share/location-tracker/browser_profile
+        mkdir -p "$$profile"
+        chrome=$$(find /ms-playwright -path "*/chrome-linux64/chrome" -print -quit)
+        echo "Open http://localhost:6080/vnc.html, click Connect, sign in to Google, then close Chromium."
+        "$$chrome" --no-sandbox --disable-dev-shm-usage --user-data-dir="$$profile" --window-size=1920,1080 "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fwww.google.com%2Fmaps"
+        python -c "import os; from providers import GoogleLocationProvider; provider = GoogleLocationProvider(\"/home/location/.local/share/location-tracker/cookies.enc\", os.environ[\"LOCATION_TRACKER_EMAIL\"]); raise SystemExit(0 if provider.try_refresh() else 1)"
+        echo "Cookies saved encrypted."
+      '
+
+volumes:
+  tracker-data:
+  tracker-config:
