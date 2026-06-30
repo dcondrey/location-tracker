@@ -12,6 +12,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+
 class Colors:
     GREEN = "\033[92m"
     YELLOW = "\033[93m"
@@ -21,7 +22,10 @@ class Colors:
 
 
 def _color(text: str, color: str) -> str:
+    if not sys.stderr.isatty():
+        return text
     return f"{color}{text}{Colors.RESET}"
+
 
 APP_DIR = Path.home() / ".local" / "share" / "location-tracker"
 CONFIG_DIR = Path.home() / ".config" / "location-tracker"
@@ -210,7 +214,11 @@ def _serve():
 
 def _status():
     if _is_running():
-        log.info(  _color("Running (pid %d). Dashboard: %s", Colors.CYAN), _read_pid(), CUSTOM_URL,)
+        log.info(
+            _color("Running (pid %d). Dashboard: %s", Colors.CYAN),
+            _read_pid(),
+            CUSTOM_URL,
+        )
     else:
         log.info("Not running.")
 
@@ -251,7 +259,12 @@ def _setup():
         [sys.executable, "-m", "playwright", "install", "chromium"],
     )
     if result.returncode != 0:
-        log.error(_color("Failed to install Chromium. Check your internet connection.",Colors.RED,))
+        log.error(
+            _color(
+                "Failed to install Chromium. Check your internet connection.",
+                Colors.RED,
+            )
+        )
         return
     log.info("  Chromium installed.")
     log.info("")
@@ -280,8 +293,13 @@ def _setup():
         except Exception:
             log.warning("  Port 80 forwarding not active. Dashboard available at http://tracker.local:%d", PORT)
     except Exception:
-        log.warning( _color(
-        "  Dashboard still starting. Check http://tracker.local:%d",Colors.YELLOW,), PORT,)
+        log.warning(
+            _color(
+                "  Dashboard still starting. Check http://tracker.local:%d",
+                Colors.YELLOW,
+            ),
+            PORT,
+        )
     webbrowser.open(CUSTOM_URL)
     log.info("")
     log.info("--- Setup Complete ---")
@@ -430,7 +448,7 @@ def _test_cookies():
         service = Service(cookies_file=tmp_path, authenticating_account=email)
         people = service.get_all_people()
         if people:
-            log.info( _color("  Cookies are valid. Found %d shared contact(s):", Colors.GREEN), len(people))
+            log.info(_color("  Cookies are valid. Found %d shared contact(s):", Colors.GREEN), len(people))
             for person in people:
                 name = person.full_name or person.nickname or "Unknown"
                 log.info("    - %s", name)
@@ -438,7 +456,10 @@ def _test_cookies():
             log.warning(_color("  Cookies work but no shared contacts found.", Colors.YELLOW))
             log.warning("  Ensure someone is sharing their location with %s", email)
     except Exception as e:
-        log.error(_color("  Cookie validation failed: %s", Colors.RED), e,)
+        log.error(
+            _color("  Cookie validation failed: %s", Colors.RED),
+            e,
+        )
         log.error("  Re-run: location-tracker cookies")
     finally:
         os.unlink(tmp_path)
