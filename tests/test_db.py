@@ -71,8 +71,11 @@ def test_get_total_points(db):
 
 
 def test_purge_older_than(db):
+    from datetime import UTC, datetime, timedelta
+
+    recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     db.add_location("Alice", "2020-01-01T00:00:00+00:00", 32.7, -117.1)
-    db.add_location("Alice", "2026-06-01T12:00:00+00:00", 32.71, -117.11)
+    db.add_location("Alice", recent, 32.71, -117.11)
 
     count = db.purge_older_than(30)
     assert count == 1
