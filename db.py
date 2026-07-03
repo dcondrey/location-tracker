@@ -1,6 +1,7 @@
 import json
 import logging
 import sqlite3
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -137,11 +138,26 @@ MIGRATIONS = {
 class LocationDB:
     def __init__(self, db_path="location_history.db"):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA busy_timeout=5000")
+        # Each thread gets its own connection. Sharing one sqlite3 connection
+        # across the poll thread and Flask request threads is not safe; WAL lets
+        # the per-thread connections read concurrently with a single writer.
+        self._local = threading.local()
         self._run_migrations()
+
+    def _new_conn(self):
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
+    @property
+    def conn(self):
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._new_conn()
+            self._local.conn = conn
+        return conn
 
     def _get_version(self):
         try:
@@ -191,7 +207,7 @@ class LocationDB:
         rows = self.conn.execute("SELECT DISTINCT person FROM locations ORDER BY person").fetchall()
         return [r["person"] for r in rows]
 
-    def get_locations(self, person=None, since=None):
+    def get_locations(self, person=None, since=None, limit=None):
         query = "SELECT * FROM locations WHERE 1=1"
         params = []
         if person:
@@ -200,11 +216,36 @@ class LocationDB:
         if since:
             query += " AND timestamp >= ?"
             params.append(since)
+        if limit:
+            # Fetch the most recent `limit` rows, then return chronologically.
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            rows = self.conn.execute(query, params).fetchall()
+            return [dict(r) for r in reversed(rows)]
         query += " ORDER BY timestamp"
         return [dict(r) for r in self.conn.execute(query, params).fetchall()]
 
-    def get_history_dict(self, since=None):
-        locations = self.get_locations(since=since)
+    def get_recent_by_person(self, limit_per_person=50):
+        """Most recent points per person, chronological. Bounds per-cycle reads."""
+        result = {}
+        for person in self.get_people():
+            rows = self.conn.execute(
+                "SELECT * FROM locations WHERE person = ? ORDER BY timestamp DESC LIMIT ?",
+                (person, limit_per_person),
+            ).fetchall()
+            points = []
+            for r in reversed(rows):
+                loc = dict(r)
+                loc.pop("id", None)
+                loc.pop("person", None)
+                if loc["charging"] is not None:
+                    loc["charging"] = bool(loc["charging"])
+                points.append(loc)
+            result[person] = points
+        return result
+
+    def get_history_dict(self, since=None, limit=None):
+        locations = self.get_locations(since=since, limit=limit)
         result = {}
         for loc in locations:
             person = loc.pop("person")
@@ -260,7 +301,10 @@ class LocationDB:
         self.conn.commit()
         count = result.rowcount
         if count > 0:
-            self.conn.execute("VACUUM")
+            try:
+                self.conn.execute("VACUUM")
+            except sqlite3.OperationalError as e:
+                log.warning("VACUUM skipped (%s); space reclaims on a later run.", e)
             log.info("Purged %d records older than %d days.", count, days)
         return count
 
@@ -305,7 +349,10 @@ class LocationDB:
         self.conn.commit()
 
     def close(self):
-        self.conn.close()
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
 
     def import_from_json(self, json_path):
         json_path = Path(json_path)

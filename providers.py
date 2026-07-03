@@ -121,8 +121,16 @@ class GoogleLocationProvider(LocationProvider):
                 context.close()
 
                 if _has_auth_cookies(cookies):
-                    _write_cookies_file(cookies)
-                    encrypt_cookies("cookies.txt", self.cookies_file)
+                    import tempfile
+
+                    fd, tmp_path = tempfile.mkstemp(suffix=".txt", prefix="cookies_")
+                    os.close(fd)
+                    try:
+                        _write_cookies_file(cookies, tmp_path)
+                        encrypt_cookies(tmp_path, self.cookies_file)
+                    finally:
+                        if os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
                     return True
             return False
         except Exception as e:

@@ -1,6 +1,8 @@
 import logging
+import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -191,17 +193,23 @@ def generate_cookies_txt():
         time.sleep(3)
         cookies = context.cookies()
 
-        count = _write_cookies_file(cookies)
-
-        if not _validate_cookies():
-            log.warning("  Saved %d cookies but validation failed.", count)
-            log.warning("  Encrypting anyway. Try: location-tracker test")
-        else:
-            log.info("  Cookies validated successfully.")
-
         from cookie_store import encrypt_cookies
 
-        encrypt_cookies("cookies.txt")
+        # Write plaintext cookies to a private (0600) tempfile, never a relative
+        # path in the current working directory. encrypt_cookies() removes it.
+        fd, tmp_path = tempfile.mkstemp(suffix=".txt", prefix="cookies_")
+        os.close(fd)
+        try:
+            count = _write_cookies_file(cookies, tmp_path)
+            if not _validate_cookies(tmp_path):
+                log.warning("  Saved %d cookies but validation failed.", count)
+                log.warning("  Encrypting anyway. Try: location-tracker test")
+            else:
+                log.info("  Cookies validated successfully.")
+            encrypt_cookies(tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
         log.info("  Saved %d cookies (encrypted).", count)
         log.info("")
         log.info("  Start tracking with: location-tracker on")

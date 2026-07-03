@@ -1,4 +1,5 @@
 import json
+import threading
 
 import pytest
 
@@ -122,3 +123,42 @@ def test_empty_db_operations(db):
     assert db.get_history_dict() == {}
     assert db.get_total_points() == 0
     assert db.get_latest("Nobody") is None
+
+
+def test_concurrent_writes_from_threads(db):
+    # Each thread uses its own connection (thread-local); shared-connection
+    # use would race. All 100 inserts must land without error.
+    def worker(n):
+        for i in range(20):
+            db.add_location(f"P{n}", f"2026-06-01T12:{i:02d}:00+00:00", 32.0 + i * 0.001, -117.0)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert db.get_total_points() == 100
+
+
+def test_get_locations_limit(db):
+    for i in range(5):
+        db.add_location("Alice", f"2026-06-01T12:0{i}:00+00:00", 32.0 + i, -117.0)
+    locs = db.get_locations(person="Alice", limit=2)
+    assert len(locs) == 2
+    assert locs[0]["latitude"] == 35.0
+    assert locs[1]["latitude"] == 36.0
+
+
+def test_get_recent_by_person(db):
+    for i in range(5):
+        db.add_location("Alice", f"2026-06-01T12:0{i}:00+00:00", 32.0 + i, -117.0, charging=(i % 2 == 0))
+    db.add_location("Bob", "2026-06-01T12:00:00+00:00", 33.0, -117.0)
+
+    recent = db.get_recent_by_person(limit_per_person=3)
+    assert len(recent["Alice"]) == 3
+    assert recent["Alice"][0]["latitude"] == 34.0
+    assert recent["Alice"][-1]["latitude"] == 36.0
+    assert "id" not in recent["Alice"][0]
+    assert "person" not in recent["Alice"][0]
+    assert recent["Alice"][-1]["charging"] is True
+    assert len(recent["Bob"]) == 1

@@ -45,6 +45,7 @@ DEFAULTS = {
     "hostname": "tracker.local",
     "data_file": str(APP_DIR / "location_history.db"),
     "cookies_file": str(APP_DIR / "cookies.enc"),
+    "retention_days": 0,
 }
 
 
@@ -92,6 +93,7 @@ HOSTNAME = _c["hostname"]
 CUSTOM_URL = f"http://{_c['hostname']}:{_c['port']}"
 DATA_FILE = _c["data_file"]
 COOKIES_FILE = _c["cookies_file"]
+RETENTION_DAYS = _c["retention_days"]
 del _c
 
 
@@ -210,6 +212,7 @@ def _serve():
         email=_get_email(),
         port=PORT,
         poll_interval=POLL_INTERVAL,
+        retention_days=RETENTION_DAYS,
     )
 
 
@@ -560,6 +563,12 @@ def cli():
     config_parser.add_argument(
         "--poll-interval", type=int, dest="poll_interval", help="Default poll interval in seconds"
     )
+    config_parser.add_argument(
+        "--retention-days",
+        type=int,
+        dest="retention_days",
+        help="Auto-delete location data older than N days (0 = keep forever)",
+    )
 
     subparsers.add_parser("install", help="Install as persistent service (survives reboot)")
     subparsers.add_parser("uninstall", help="Remove the persistent service")
@@ -621,7 +630,7 @@ def cli():
     elif args.command == "config":
         config = _load_config()
         changed = False
-        for key in ("email", "port", "hostname", "poll_interval"):
+        for key in ("email", "port", "hostname", "poll_interval", "retention_days"):
             val = getattr(args, key, None)
             if val is not None:
                 config[key] = val
@@ -632,7 +641,7 @@ def cli():
         else:
             log.info("Config file: %s", CONFIG_FILE)
             for k, v in config.items():
-                log.info("  %s: %s", k, v or "(not set)")
+                log.info("  %s: %s", k, v if v not in ("", None) else "(not set)")
     elif args.command == "install":
         _install_launchd()
     elif args.command == "uninstall":
