@@ -170,7 +170,7 @@ def _adaptive_interval(history, default_interval):
     return best_interval, best_category
 
 
-def run_dashboard(data_file, cookies_file, email, port, poll_interval):
+def create_app(data_file, cookies_file, email, poll_interval, retention_days=0, start_poll=True):
     app = Flask(__name__, template_folder=str(_TEMPLATE_DIR), static_folder=str(_STATIC_DIR))
     app.logger.setLevel(logging.WARNING)
     tracker = LocationTracker(cookies_file, email, data_file)
@@ -208,7 +208,7 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
                 success = tracker.poll_location()
                 if success:
                     consecutive_failures = 0
-                    history = tracker.history
+                    history = tracker.recent_history()
                     best_interval = 600
                     best_reason = "idle"
 
@@ -310,6 +310,8 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
                 # Daily maintenance
                 if time.time() - last_maintenance > 86400:
                     intel.decay_old_observations()
+                    if retention_days and retention_days > 0:
+                        tracker.db.purge_older_than(retention_days)
                     last_maintenance = time.time()
 
                 with poll_lock:
@@ -323,8 +325,9 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
                 consecutive_failures += 1
                 time.sleep(min(poll_interval * (2**consecutive_failures), 1800))
 
-    poll_thread = threading.Thread(target=background_poll, daemon=True)
-    poll_thread.start()
+    if start_poll:
+        poll_thread = threading.Thread(target=background_poll, daemon=True)
+        poll_thread.start()
 
     @app.route("/")
     def index():
@@ -342,10 +345,13 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
             days_int = None
         from datetime import timedelta
 
-        since = None
         if days_int:
             since = (datetime.now(UTC) - timedelta(days=days_int)).isoformat()
-        data = tracker.db.get_history_dict(since=since)
+            data = tracker.db.get_history_dict(since=since)
+        else:
+            # No time window: cap per person so a busy person can't crowd others
+            # out of the view, and unbounded history never loads into one response.
+            data = tracker.db.get_recent_by_person(limit_per_person=2000)
         # Attach speed_info per person so the frontend doesn't need to recompute
         speed_info = {}
         for person, pts in data.items():
@@ -404,7 +410,7 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
     @app.route("/api/v1/snap", methods=["POST"])
     def api_snap():
         data = request.get_json()
-        if not data or "coords" not in data:
+        if not data or not isinstance(data.get("coords"), list):
             return jsonify({"error": "missing coords"}), 400
         try:
             from road_snap import get_snapper
@@ -412,7 +418,8 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
             snapped = get_snapper().snap_trace(data["coords"])
             return jsonify({"coords": snapped})
         except Exception as e:
-            return jsonify({"coords": data["coords"], "error": str(e)})
+            log.warning("Road snap failed: %s: %s", type(e).__name__, e)
+            return jsonify({"coords": data["coords"], "error": "snap unavailable"})
 
     @app.route("/api/geofences")
     @app.route("/api/v1/geofences")
@@ -426,14 +433,24 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
         data = request.get_json()
         if not data or not all(k in data for k in ("person", "label", "latitude", "longitude")):
             return jsonify({"error": "missing fields"}), 400
+        try:
+            lat = float(data["latitude"])
+            lon = float(data["longitude"])
+            radius_m = float(data.get("radius_m", 200))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid coordinates"}), 400
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            return jsonify({"error": "coordinates out of range"}), 400
+        if radius_m <= 0:
+            return jsonify({"error": "radius must be positive"}), 400
         gid = tracker.db.add_geofence(
             data["person"],
             data["label"],
-            float(data["latitude"]),
-            float(data["longitude"]),
-            radius_m=float(data.get("radius_m", 200)),
-            on_enter=data.get("on_enter", True),
-            on_exit=data.get("on_exit", True),
+            lat,
+            lon,
+            radius_m=radius_m,
+            on_enter=bool(data.get("on_enter", True)),
+            on_exit=bool(data.get("on_exit", True)),
         )
         return jsonify({"ok": True, "id": gid})
 
@@ -511,8 +528,19 @@ def run_dashboard(data_file, cookies_file, email, port, poll_interval):
 
         return jsonify(history)
 
-    import werkzeug.serving
+    return app
 
-    werkzeug.serving.WSGIRequestHandler.log = lambda *args, **kwargs: None
+
+def run_dashboard(data_file, cookies_file, email, port, poll_interval, retention_days=0):
+    from waitress import serve
+
+    app = create_app(
+        data_file,
+        cookies_file,
+        email,
+        poll_interval,
+        retention_days=retention_days,
+        start_poll=True,
+    )
     log.info("Dashboard running at http://tracker.local (port %d)", port)
-    app.run(host="127.0.0.1", port=port, debug=False)
+    serve(app, host="127.0.0.1", port=port, threads=8)

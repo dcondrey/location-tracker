@@ -1,5 +1,7 @@
+import html
 import logging
 import math
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,6 +22,7 @@ class LocationTracker:
         self._stats_cache = None
         self._stats_cache_time = 0
         self._stats_cache_points = 0
+        self._stats_lock = threading.Lock()
         self.last_error_type = None
 
         # Auto-migrate from JSON if DB is empty and JSON exists
@@ -32,6 +35,9 @@ class LocationTracker:
     def history(self):
         return self.db.get_history_dict()
 
+    def recent_history(self, limit_per_person=50):
+        return self.db.get_recent_by_person(limit_per_person)
+
     def haversine(self, lon1, lat1, lon2, lat2):
         lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
         dlon = lon2 - lon1
@@ -40,7 +46,7 @@ class LocationTracker:
         c = 2 * math.asin(math.sqrt(a))
         return c * 6371000
 
-    def poll_location(self):
+    def poll_location(self, _allow_refresh=True):
         try:
             locations = self.provider.get_locations()
 
@@ -68,11 +74,14 @@ class LocationTracker:
         except ProviderAuthError:
             self.db.record_poll(success=False, error_type="auth", error_message="credentials expired")
             self.last_error_type = "auth"
-            log.warning("Auth expired. Attempting automatic refresh...")
-            if hasattr(self.provider, "try_refresh") and self.provider.try_refresh():
-                log.info("Auth refreshed successfully. Retrying poll.")
-                return self.poll_location()
-            log.error("Auto-refresh failed. %s", self.provider.auth_instructions())
+            if _allow_refresh and hasattr(self.provider, "try_refresh"):
+                log.warning("Auth expired. Attempting automatic refresh...")
+                if self.provider.try_refresh():
+                    log.info("Auth refreshed successfully. Retrying poll.")
+                    return self.poll_location(_allow_refresh=False)
+                log.error("Auto-refresh failed. %s", self.provider.auth_instructions())
+            else:
+                log.error("Auth expired. %s", self.provider.auth_instructions())
             return False
         except ProviderError as e:
             self.db.record_poll(success=False, error_type="provider", error_message=str(e))
@@ -93,48 +102,49 @@ class LocationTracker:
         return self.db.get_people()
 
     def get_stats(self):
-        total_points = self.db.get_total_points()
-        now = time.time()
-        if (
-            self._stats_cache is not None
-            and now - self._stats_cache_time < 30
-            and total_points == self._stats_cache_points
-        ):
-            return self._stats_cache
+        with self._stats_lock:
+            total_points = self.db.get_total_points()
+            now = time.time()
+            if (
+                self._stats_cache is not None
+                and now - self._stats_cache_time < 30
+                and total_points == self._stats_cache_points
+            ):
+                return self._stats_cache
 
-        import pandas as pd
+            import pandas as pd
 
-        stats = {}
-        for person, locations in self.history.items():
-            if not locations:
-                continue
-            df = pd.DataFrame(locations)
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            stats = {}
+            for person, locations in self.history.items():
+                if not locations:
+                    continue
+                df = pd.DataFrame(locations)
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-            total_distance = 0.0
-            for i in range(1, len(df)):
-                total_distance += self.haversine(
-                    df.iloc[i - 1]["longitude"],
-                    df.iloc[i - 1]["latitude"],
-                    df.iloc[i]["longitude"],
-                    df.iloc[i]["latitude"],
-                )
+                total_distance = 0.0
+                for i in range(1, len(df)):
+                    total_distance += self.haversine(
+                        df.iloc[i - 1]["longitude"],
+                        df.iloc[i - 1]["latitude"],
+                        df.iloc[i]["longitude"],
+                        df.iloc[i]["latitude"],
+                    )
 
-            stops = self._compute_stops(df)
-            total_dwell = sum((s["end_time"] - s["start_time"]).total_seconds() for s in stops)
+                stops = self._compute_stops(df)
+                total_dwell = sum((s["end_time"] - s["start_time"]).total_seconds() for s in stops)
 
-            stats[person] = {
-                "total_points": len(df),
-                "total_distance_km": round(total_distance / 1000, 2),
-                "total_stops": len(stops),
-                "total_dwell_hours": round(total_dwell / 3600, 1),
-                "first_seen": df["timestamp"].min().isoformat(),
-                "last_seen": df["timestamp"].max().isoformat(),
-            }
-        self._stats_cache = stats
-        self._stats_cache_time = time.time()
-        self._stats_cache_points = total_points
-        return stats
+                stats[person] = {
+                    "total_points": len(df),
+                    "total_distance_km": round(total_distance / 1000, 2),
+                    "total_stops": len(stops),
+                    "total_dwell_hours": round(total_dwell / 3600, 1),
+                    "first_seen": df["timestamp"].min().isoformat(),
+                    "last_seen": df["timestamp"].max().isoformat(),
+                }
+            self._stats_cache = stats
+            self._stats_cache_time = time.time()
+            self._stats_cache_points = total_points
+            return stats
 
     def print_stats(self):
         stats = self.get_stats()
@@ -260,6 +270,8 @@ class LocationTracker:
                 else:
                     radius = 16
 
+                safe_person = html.escape(str(person))
+                safe_address = html.escape(str(stop["address"]))
                 valid_batteries = [b for b in stop["batteries"] if b is not None]
                 avg_battery = int(sum(valid_batteries) / len(valid_batteries)) if valid_batteries else None
                 batt_str = f"{avg_battery}%" if avg_battery is not None else "N/A"
@@ -276,9 +288,9 @@ class LocationTracker:
                 popup_html = f"""
                 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 240px; color: #333;">
                     <div style="background: {color}; color: white; padding: 8px 12px; margin: -10px -10px 10px -10px; font-weight: 600; font-size: 14px; border-radius: 4px 4px 0 0;">
-                        {person}
+                        {safe_person}
                     </div>
-                    <p style="margin: 4px 0; font-size: 13px;"><b>Address:</b> {stop["address"]}</p>
+                    <p style="margin: 4px 0; font-size: 13px;"><b>Address:</b> {safe_address}</p>
                     <hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;">
                     <p style="margin: 4px 0; font-size: 13px;"><b>Date:</b> {stop["start_time"].strftime("%b %d, %Y")}</p>
                     <p style="margin: 4px 0; font-size: 13px;"><b>Time:</b> {time_str}</p>
@@ -292,7 +304,7 @@ class LocationTracker:
                     location=[stop["lat"], stop["lon"]],
                     radius=radius,
                     popup=folium.Popup(popup_html, max_width=280),
-                    tooltip=f"{person}: {stop['address']} ({duration_str})",
+                    tooltip=f"{safe_person}: {safe_address} ({duration_str})",
                     color="#ffffff",
                     weight=2,
                     fill=True,
@@ -315,7 +327,7 @@ class LocationTracker:
         people_items = "".join(
             f'<div style="display:flex;align-items:center;margin-bottom:5px;">'
             f'<div style="width:12px;height:12px;background:{c};border-radius:50%;margin-right:8px;border:2px solid white;"></div>'
-            f"<span>{p}</span></div>"
+            f"<span>{html.escape(str(p))}</span></div>"
             for p, c in color_map.items()
         )
         legend_html = f"""

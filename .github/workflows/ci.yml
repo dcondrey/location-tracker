@@ -70,6 +70,25 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short || echo "No tests found yet"
 
+  e2e:
+    name: Dashboard E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Install Playwright Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run dashboard E2E tests (headless, offline)
+        run: uv run pytest tests/test_dashboard_e2e.py -v
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
