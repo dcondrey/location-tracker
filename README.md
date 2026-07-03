@@ -1,10 +1,19 @@
+<div align="center">
+
 # Location Tracker
+
+**Self-hosted location tracking for your family — poll Google Maps location sharing and visualize movement history on a live map, entirely on your own machine.**
+
 [![CI](https://github.com/dcondrey/location-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/dcondrey/location-tracker/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/location-tracker.svg)](https://pypi.org/project/location-tracker/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org)
 
+[Install](#install) · [Getting Started](#getting-started) · [Prerequisites](#prerequisites) · [Troubleshooting](#troubleshooting)
 
-A self-hosted location tracking dashboard that polls Google Maps location sharing and visualizes movement history on an interactive map. Features intelligent learning-based polling, geofencing, road snapping, and route corridor prediction. Runs as a background daemon with a real-time web interface.
+</div>
+
+Intelligent learning-based polling, geofencing, road snapping, and route-corridor prediction, served by a background daemon with a real-time web dashboard.
 
 ## Screenshots
 
@@ -15,6 +24,10 @@ A self-hosted location tracking dashboard that polls Google Maps location sharin
 | Heatmap | Points |
 |:-------:|:------:|
 | ![Heatmap](static/screenshot_03.jpg) | ![Points](static/screenshot_04.jpg) |
+
+## Why self-host
+
+Google Timeline, Life360, and Find My keep your family's location data on someone else's servers. Location Tracker keeps it on yours -- the database, the encrypted auth cookies, and the dashboard never leave your machine. You still get adaptive polling, automatic place learning, and geofencing, without handing your movement history to a third party.
 
 ## Install
 
@@ -41,7 +54,8 @@ uv sync
 uv run location-tracker setup
 ```
 
-### Docker
+<details>
+<summary><strong>Docker</strong> -- run on Linux/Windows without Python on the host</summary>
 
 Docker runs the tracker without installing Python on the host. The container includes Playwright Chromium. Cookie sign-in uses a temporary noVNC browser session, and the tracker stores its database and encrypted cookies in Docker volumes.
 
@@ -120,6 +134,8 @@ docker compose down -v
 
 Docker users do not need Python, uv, macOS Keychain, or launchd on the host. Docker Desktop or Docker Engine with Compose is enough.
 
+</details>
+
 ## Getting Started
 
 ```bash
@@ -132,7 +148,7 @@ location-tracker setup
 
 That's it. The setup command installs Chromium, configures `tracker.local` in `/etc/hosts`, opens a browser for Google sign-in, encrypts the cookies, starts the daemon, and opens the dashboard automatically.
 
-The dashboard runs at **http://tracker.local**. Flask listens on port 7070; macOS packet filter forwards port 80 transparently. If the hostname doesn't resolve, use `http://localhost:7070`.
+The dashboard runs at **http://tracker.local**. It listens on port 7070; the macOS packet filter forwards port 80 transparently. If the hostname doesn't resolve, use `http://localhost:7070`.
 
 ## Prerequisites
 
@@ -191,6 +207,7 @@ When cookies expire, the tracker automatically attempts a headless browser refre
 | `config --port 7070` | Set the dashboard port |
 | `config --hostname tracker.local` | Set the custom hostname |
 | `config --poll-interval 600` | Set the default poll interval (seconds) |
+| `config --retention-days 90` | Auto-delete data older than N days (0 = keep forever) |
 | `config` | Show current configuration |
 | `setup` | Full setup: install browser, DNS, authenticate, start, and open dashboard |
 
@@ -293,18 +310,18 @@ The tracker learns from observed patterns to improve predictions over time:
 
 ### Security
 
-- **Encrypted at rest** -- Auth cookies encrypted with Fernet; key in macOS Keychain
-- **Localhost only** -- Flask binds to `127.0.0.1`; not accessible from the network
-- **XSS protection** -- All user-controlled data HTML-escaped before rendering
-- **Input validation** -- Lat/lon bounds checking on all coordinate inputs
-- **Atomic storage** -- SQLite with WAL mode for concurrent read/write safety
-- **No plaintext secrets** -- Plaintext `cookies.txt` auto-migrated and deleted on first run
+- **Encrypted at rest** -- Auth cookies encrypted with Fernet; key in macOS Keychain (or a `0600` key file under Docker)
+- **Binds to localhost** -- The dashboard serves on `127.0.0.1` by default. Note: the optional macOS port-80 forwarding and the Docker setup expose it on your network, and **the dashboard has no authentication** -- run it only on a trusted network.
+- **XSS protection** -- All user-controlled data (person names, addresses) HTML-escaped before rendering
+- **Input validation** -- Lat/lon type and bounds checking on all coordinate inputs
+- **Concurrency-safe storage** -- SQLite WAL mode with a dedicated connection per thread
+- **No plaintext secrets** -- Cookies are only written to a private temp file during encryption, then deleted; any legacy `cookies.txt` is auto-migrated and removed
 
 ### Data Storage
 
 Location history is stored in a local SQLite database (`location_history.db`) with indexed columns for person, timestamp, and compound queries. Existing `location_history.json` files are automatically migrated on first run.
 
-Use `location-tracker purge <days>` to enforce a retention policy.
+Use `location-tracker purge <days>` for a one-off cleanup, or set `config --retention-days N` to have the tracker automatically delete data older than N days during its daily maintenance.
 
 </details>
 
