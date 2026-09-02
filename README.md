@@ -1,13 +1,14 @@
-<div align="center">
+<!-- repo-header:start -->
+<img src="https://github.com/dcondrey.png?size=160" alt="Location Tracker logo" width="120" align="left">
 
-# Location Tracker
+<h1>Location Tracker</h1>
 
-**Self-hosted location tracking for your family — poll Google Maps location sharing and visualize movement history on a live map, entirely on your own machine.**
+<p><strong>Self-hosted real-time location tracking dashboard. Polls Google Maps sharing with adaptive intervals, encrypted cookie storage, SQLite backend, and interactive Leaflet map.</strong></p>
 
-[![CI](https://github.com/dcondrey/location-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/dcondrey/location-tracker/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/location-tracker.svg)](https://pypi.org/project/location-tracker/)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<br clear="left">
+
+[![CI](https://img.shields.io/github/actions/workflow/status/dcondrey/location-tracker/publish.yml?style=flat-square&labelColor=20232a&branch=main&label=CI)](https://github.com/dcondrey/location-tracker/actions/workflows/publish.yml) [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14405/badge)](https://www.bestpractices.dev/projects/14405) [![License](https://img.shields.io/github/license/dcondrey/location-tracker?style=flat-square&labelColor=20232a&color=007ec6&label=license)](https://github.com/dcondrey/location-tracker/blob/main/LICENSE) [![Code of Conduct](https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant%202.1-6a4c93?style=flat-square&labelColor=20232a)](https://github.com/dcondrey/location-tracker/blob/main/CODE_OF_CONDUCT.md) [![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-EA4AAA?style=flat-square&labelColor=20232a)](https://github.com/sponsors/dcondrey) [![PyPI](https://img.shields.io/pypi/v/location-tracker.svg?style=flat-square&labelColor=20232a&color=007ec6)](https://pypi.org/project/location-tracker/)
+<!-- repo-header:end -->
 
 [Install](#install) · [Getting Started](#getting-started) · [Prerequisites](#prerequisites) · [Troubleshooting](#troubleshooting)
 
@@ -148,7 +149,7 @@ location-tracker setup
 
 That's it. The setup command installs Chromium, configures `tracker.local` in `/etc/hosts`, opens a browser for Google sign-in, encrypts the cookies, starts the daemon, and opens the dashboard automatically.
 
-The dashboard runs at **http://tracker.local**. It listens on port 7070; the macOS packet filter forwards port 80 transparently. If the hostname doesn't resolve, use `http://localhost:7070`.
+The dashboard runs at **http://tracker.local** It listens on port 7070; the macOS packet filter forwards port 80 transparently. If the hostname doesn't resolve, use `http://localhost:7070`
 
 ## Prerequisites
 
