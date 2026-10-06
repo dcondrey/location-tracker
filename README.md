@@ -1,23 +1,11 @@
-<!-- repo-header:start -->
-<h3 align="center">Location Tracker</h3>
+### Location Tracker
 
-<p align="center"><strong>Self-hosted real-time location tracking dashboard. Polls Google Maps sharing with adaptive intervals, encrypted cookie storage, SQLite backend, and interactive Leaflet map.</strong></p>
+Self-hosted real-time location tracking dashboard. Polls Google Maps sharing with adaptive intervals, encrypted cookie storage, SQLite backend, and interactive Leaflet map.
 
-<p align="center">
-  <a href="https://github.com/dcondrey/location-tracker/actions/workflows/publish.yml"><img src="https://img.shields.io/github/actions/workflow/status/dcondrey/location-tracker/publish.yml?style=flat-square&labelColor=20232a&branch=main&label=CI" alt="CI"></a>
-  <a href="https://www.bestpractices.dev/projects/14405"><img src="https://www.bestpractices.dev/projects/14405/badge" alt="OpenSSF Best Practices"></a>
-  <a href="https://github.com/dcondrey/location-tracker/blob/main/LICENSE"><img src="https://img.shields.io/github/license/dcondrey/location-tracker?style=flat-square&labelColor=20232a&color=007ec6&label=license" alt="License"></a>
-  <a href="https://github.com/dcondrey/location-tracker/blob/main/CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant%202.1-6a4c93?style=flat-square&labelColor=20232a" alt="Code of Conduct"></a>
-  <a href="https://github.com/sponsors/dcondrey"><img src="https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-EA4AAA?style=flat-square&labelColor=20232a" alt="GitHub Sponsors"></a>
-  <a href="https://pypi.org/project/location-tracker/"><img src="https://img.shields.io/pypi/v/location-tracker.svg?style=flat-square&labelColor=20232a&color=007ec6" alt="PyPI"></a>
-</p>
-<!-- repo-header:end -->
-
----
+[![CI](https://img.shields.io/github/actions/workflow/status/dcondrey/location-tracker/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/dcondrey/location-tracker/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/location-tracker?style=flat-square)](https://pypi.org/project/location-tracker/) [![License](https://img.shields.io/github/license/dcondrey/location-tracker?style=flat-square)](https://github.com/dcondrey/location-tracker/blob/main/LICENSE)
 
 [Install](#install) · [Getting Started](#getting-started) · [Prerequisites](#prerequisites) · [Troubleshooting](#troubleshooting)
 
-</div>
 
 Intelligent learning-based polling, geofencing, road snapping, and route-corridor prediction, served by a background daemon with a real-time web dashboard.
 
